@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, MapPin, X } from 'lucide-react';
+import { Search, ChevronLeft, ChevronRight, MapPin, X, Download, Plus } from 'lucide-react';
 import { useStore } from '../store.js';
 
 function StatusBadge({ contact }) {
@@ -38,10 +38,31 @@ export function Dashboard() {
 
     const getFilteredContacts = useStore((s) => s.getFilteredContacts);
     const getStats = useStore((s) => s.getStats);
+    const canExport = useStore((s) => s.canExport);
+    const addContact = useStore((s) => s.addContact);
     const navigate = useNavigate();
 
     const [page, setPage] = useState(0);
     const PAGE_SIZE = 150;
+
+    const [showNewModal, setShowNewModal] = useState(false);
+    const [isCreating, setIsCreating] = useState(false);
+    const [newContact, setNewContact] = useState({ officeName: '', contactName: '', email: '', phone1: '', city: '', state: '' });
+
+    const handleCreateContact = async () => {
+        if (!newContact.officeName.trim() || isCreating) return;
+        setIsCreating(true);
+        try {
+            const newId = await addContact(newContact);
+            if (newId) {
+                setShowNewModal(false);
+                setNewContact({ officeName: '', contactName: '', email: '', phone1: '', city: '', state: '' });
+                navigate(`/contact/${newId}`);
+            }
+        } finally {
+            setIsCreating(false);
+        }
+    };
 
     const stats = useMemo(() => getStats(), [contacts]);
     const filtered = useMemo(() => getFilteredContacts(), [contacts, activeSearchQuery, cityFilter, statusFilter, specialtyFilter]);
@@ -64,6 +85,45 @@ export function Dashboard() {
         setCityFilter('');
         setStatusFilter('');
         setSpecialtyFilter('');
+    };
+
+    const exportToCSV = () => {
+        if (!filtered || filtered.length === 0) return;
+
+        const headers = ['Business Name', 'Contact Name', 'City', 'State', 'Specialties', 'Phone', 'Status', 'Who'];
+        const csvRows = [headers.join(',')];
+
+        const escapeCsv = (val) => {
+            if (val === null || val === undefined) return '""';
+            const str = String(val).replace(/"/g, '""');
+            return `"${str}"`;
+        };
+
+        for (const contact of filtered) {
+            const status = contact.a ? 'A' : contact.b ? 'B' : contact.c ? 'C' : 'None';
+            const row = [
+                escapeCsv(contact.officeName),
+                escapeCsv(contact.contactName),
+                escapeCsv(contact.city),
+                escapeCsv(contact.state),
+                escapeCsv(contact.specialties?.join('; ')),
+                escapeCsv(contact.phone1),
+                escapeCsv(status),
+                escapeCsv(contact.who)
+            ];
+            csvRows.push(row.join(','));
+        }
+
+        const csvData = csvRows.join('\n');
+        const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.setAttribute('href', url);
+        link.setAttribute('download', 'slf-rolodex-export.csv');
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
     };
 
     return (
@@ -163,16 +223,40 @@ export function Dashboard() {
                             </div>
                         </div>
 
-                        {/* Clear Filters */}
-                        {(cityFilter || statusFilter || specialtyFilter || activeSearchQuery || searchQuery) && (
+                        <div className="flex items-center gap-2">
+                            {/* Clear Filters */}
+                            {(cityFilter || statusFilter || specialtyFilter || activeSearchQuery || searchQuery) && (
+                                <button
+                                    onClick={clearFilters}
+                                    className="flex items-center justify-center w-9 h-9 rounded-full bg-white/5 hover:bg-danger/20 text-gray-500 hover:text-white transition-colors cursor-pointer"
+                                    title="Clear filters"
+                                >
+                                    <X className="w-4 h-4" />
+                                </button>
+                            )}
+
+                            {/* Add New Contact */}
                             <button
-                                onClick={clearFilters}
-                                className="flex items-center justify-center w-9 h-9 rounded-full bg-white/5 hover:bg-danger/20 text-gray-500 hover:text-white transition-colors cursor-pointer"
-                                title="Clear filters"
+                                onClick={() => setShowNewModal(true)}
+                                className="flex items-center gap-2 px-4 py-1.5 rounded-pill text-[13px] font-bold bg-emerald/10 hover:bg-emerald/20 text-emerald border border-emerald/30 hover:border-emerald/50 transition-all cursor-pointer"
+                                title="Add new contact"
                             >
-                                <X className="w-4 h-4" />
+                                <Plus className="w-4 h-4" />
+                                New Contact
                             </button>
-                        )}
+
+                            {/* Export to CSV (admin only) */}
+                            {canExport() && (
+                                <button
+                                    onClick={exportToCSV}
+                                    className="flex items-center gap-2 px-4 py-1.5 rounded-pill text-[13px] font-bold bg-white/5 hover:bg-emerald/20 text-white border border-white/10 hover:border-emerald/50 transition-all cursor-pointer"
+                                    title="Export to CSV"
+                                >
+                                    <Download className="w-4 h-4" />
+                                    Export
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
@@ -282,6 +366,69 @@ export function Dashboard() {
                     </div>
                 )}
             </div>
+            {/* ── New Contact Modal ── */}
+            {showNewModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !isCreating && setShowNewModal(false)} />
+                    <div
+                        className="relative bg-slate-dark border border-white/10 rounded-3xl shadow-2xl w-full max-w-md mx-4 p-6 animate-fade-in"
+                        onKeyDown={(e) => {
+                            if (e.key === 'Escape' && !isCreating) setShowNewModal(false);
+                        }}
+                    >
+                        <div className="flex items-center justify-between mb-5">
+                            <h2 className="text-lg font-bold text-white">New Contact</h2>
+                            <button
+                                onClick={() => !isCreating && setShowNewModal(false)}
+                                className="p-1.5 rounded-full hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            {[
+                                { key: 'officeName', label: 'Office / Business Name *', placeholder: 'Acme Corp' },
+                                { key: 'contactName', label: 'Contact Name', placeholder: 'Jane Doe' },
+                                { key: 'email', label: 'Email', placeholder: 'jane@acme.com' },
+                                { key: 'phone1', label: 'Phone', placeholder: '(555) 123-4567' },
+                                { key: 'city', label: 'City', placeholder: 'Los Angeles' },
+                                { key: 'state', label: 'State', placeholder: 'CA' },
+                            ].map((field) => (
+                                <div key={field.key}>
+                                    <label className="block text-[12px] text-gray-400 font-semibold uppercase tracking-wider mb-1">{field.label}</label>
+                                    <input
+                                        type="text"
+                                        value={newContact[field.key]}
+                                        onChange={(e) => setNewContact((prev) => ({ ...prev, [field.key]: e.target.value }))}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') handleCreateContact(); }}
+                                        placeholder={field.placeholder}
+                                        className="w-full bg-obsidian/50 border border-white/10 rounded-xl px-4 py-2.5 text-[15px] text-white placeholder:text-gray-600 outline-none focus:border-emerald/40 transition-colors"
+                                        autoFocus={field.key === 'officeName'}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 mt-6">
+                            <button
+                                onClick={() => setShowNewModal(false)}
+                                disabled={isCreating}
+                                className="px-5 py-2 rounded-pill text-[14px] font-medium text-gray-400 hover:text-white hover:bg-white/5 transition-colors cursor-pointer disabled:opacity-50"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleCreateContact}
+                                disabled={!newContact.officeName.trim() || isCreating}
+                                className="px-5 py-2 rounded-pill text-[14px] font-bold bg-emerald text-obsidian hover:bg-emerald/90 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                                {isCreating ? 'Creating...' : 'Create Contact'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

@@ -21,6 +21,18 @@ VITE_SUPABASE_URL="your-supabase-project-url"
 VITE_SUPABASE_ANON_KEY="your-supabase-anon-key"
 ```
 
+## 2.1 User Roles Setup (Required)
+
+To enable admin/staff permissions, run the SQL in:
+
+`scripts/setup_user_management.sql`
+
+This creates the `app_users` table and RLS policies for:
+- `admin`: can create/read/update/delete contacts and manage users
+- `staff`: can create/read/update contacts but cannot delete contacts or manage users
+
+The first authenticated user can bootstrap as admin automatically from the app login screen.
+
 ## 3. Installation Steps
 
 ### Log in to your server and follow these steps:
@@ -122,3 +134,4 @@ Click **"Deploy"**. Vercel will build and host your site.
 
 - **404 on Refresh**: If you are using React Router and get a 404 when refreshing a page, ensure your web server is configured to redirect all requests to `index.html`.
 - **Supabase Connectivity**: Ensure your Supabase URL and API key are correct and that your database has the necessary tables and policies.
+- **Signup confirmation redirects to localhost**: In Supabase Auth settings, set **Site URL** and **Redirect URLs** to your production app URL (for example `https://slf-rolodex.vercel.app`). This project now uses admin-created accounts, so self-signup is disabled in-app.

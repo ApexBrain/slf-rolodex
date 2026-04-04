@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Pencil, Check, X, Mail, Globe, MapPin,
-    Pin, Send, Building2, User, Activity, MoreHorizontal, Search, UserPlus, Tag, Plus
+    Pin, Send, Building2, User, Activity, MoreHorizontal, Search, UserPlus, Tag, Plus, Trash2
 } from 'lucide-react';
 import { useStore } from '../store.js';
 
@@ -27,6 +27,7 @@ function getFaviconUrl(url) {
 function EditableField({ label, value, onSave, multiline = false }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value || '');
+    const [isSaving, setIsSaving] = useState(false);
     const ref = useRef(null);
 
     useEffect(() => { setDraft(value || ''); }, [value]);
@@ -37,7 +38,22 @@ function EditableField({ label, value, onSave, multiline = false }) {
         }
     }, [editing]);
 
-    const save = () => { onSave(draft); setEditing(false); };
+    const save = async () => {
+        if (isSaving) return;
+        if ((draft || '') === (value || '')) {
+            setEditing(false);
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const result = await onSave(draft);
+            if (result?.ok === false) return;
+            setEditing(false);
+        } finally {
+            setIsSaving(false);
+        }
+    };
     const cancel = () => { setDraft(value || ''); setEditing(false); };
 
     return (
@@ -71,10 +87,18 @@ function EditableField({ label, value, onSave, multiline = false }) {
                         />
                     )}
                     <div className="flex flex-col gap-1">
-                        <button onClick={save} className="p-2.5 rounded-xl bg-neon-yellow hover:opacity-80 text-obsidian transition-colors cursor-pointer">
+                        <button
+                            onClick={save}
+                            disabled={isSaving}
+                            className="p-2.5 rounded-xl bg-neon-yellow hover:opacity-80 text-obsidian transition-colors cursor-pointer disabled:opacity-60"
+                        >
                             <Check className="w-3.5 h-3.5" />
                         </button>
-                        <button onClick={cancel} className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer">
+                        <button
+                            onClick={cancel}
+                            disabled={isSaving}
+                            className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer disabled:opacity-60"
+                        >
                             <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
@@ -117,6 +141,8 @@ export function ContactDetail() {
     const addSpecialty = useStore((s) => s.addSpecialty);
     const removeSpecialty = useStore((s) => s.removeSpecialty);
     const getStats = useStore((s) => s.getStats);
+    const canDelete = useStore((s) => s.canDelete);
+    const deleteContact = useStore((s) => s.deleteContact);
 
     const contact = contacts.find(c => c.id === Number(id)) || null;
     const stats = getStats();
@@ -127,20 +153,23 @@ export function ContactDetail() {
     const [commentText, setCommentText] = useState('');
     const [newSpecialty, setNewSpecialty] = useState('');
     const [addingPerson, setAddingPerson] = useState(false);
-    const [newPersonData, setNewPersonData] = useState({ name: '', email: '' });
+    const [isCreatingPerson, setIsCreatingPerson] = useState(false);
+    const [newPersonData, setNewPersonData] = useState({ name: '', email: '', phone1: '' });
     const pinnedRef = useRef(null);
 
     const relatedContacts = useMemo(() => {
         if (!contact || !contact.officeName) return [];
         return contacts.filter(c => c.officeName === contact.officeName && c.officeName);
     }, [contacts, contact?.officeName]);
+    const officeContacts = relatedContacts.length > 0 ? relatedContacts : (contact ? [contact] : []);
+    const officeRecord = officeContacts[0] || contact;
 
     useEffect(() => {
-        if (contact) {
-            setPinnedDraft(contact.pinnedNote || '');
+        if (officeRecord) {
+            setPinnedDraft(officeRecord.pinnedNote || '');
             setEditingPinned(false);
         }
-    }, [contact?.id]);
+    }, [officeRecord?.id]);
 
     useEffect(() => {
         if (editingPinned && pinnedRef.current) pinnedRef.current.focus();
@@ -161,36 +190,68 @@ export function ContactDetail() {
         );
     }
 
-    const savePinned = () => {
-        if (contact) updatePinnedNote(contact.id, pinnedDraft);
+    const updateOfficeFields = async (updates) => {
+        const results = await Promise.all(officeContacts.map((c) => updateContact(c.id, updates)));
+        const hasFailure = results.some((result) => result?.ok === false);
+        return hasFailure ? { ok: false } : { ok: true };
+    };
+
+    const savePinned = async () => {
+        if (!officeContacts.length) return;
+        await Promise.all(officeContacts.map((c) => updatePinnedNote(c.id, pinnedDraft)));
         setEditingPinned(false);
     };
 
     const handleSubmitComment = () => {
-        if (!commentText.trim() || !contact) return;
-        addComment(contact.id, commentText.trim());
+        if (!commentText.trim() || officeContacts.length === 0) return;
+        officeContacts.forEach((c) => addComment(c.id, commentText.trim()));
         setCommentText('');
     };
 
-    const handleCreateContact = () => {
-        const newId = addContact({
-            officeName: contact.officeName || '',
-            streetAddress: contact.streetAddress || '',
-            city: contact.city || '',
-            state: contact.state || '',
-            zip: contact.zip || '',
-            website: contact.website || '',
-            mailing: contact.mailing || '',
-        });
-        if (newId) {
-            navigate(`/contact/${newId}`);
-            // Smoothly scroll to the top so they can edit the Primary Contact section
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+    const handleCreateContact = async () => {
+        if (isCreatingPerson) return;
+        setIsCreatingPerson(true);
+        try {
+            const newId = await addContact({
+                officeName: officeRecord?.officeName || '',
+                streetAddress: officeRecord?.streetAddress || '',
+                city: officeRecord?.city || '',
+                state: officeRecord?.state || '',
+                zip: officeRecord?.zip || '',
+                website: officeRecord?.website || '',
+                mailing: officeRecord?.mailing || '',
+                who: officeRecord?.who || '',
+                comments: officeRecord?.comments || '',
+                a: !!officeRecord?.a,
+                b: !!officeRecord?.b,
+                c: !!officeRecord?.c,
+                pinnedNote: officeRecord?.pinnedNote || '',
+                specialties: officeRecord?.specialties || [],
+                notes: officeRecord?.notes || [],
+            });
+            if (newId) {
+                navigate(`/contact/${newId}`);
+                // Smoothly scroll to the top so they can edit the Primary Contact section
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        } finally {
+            setIsCreatingPerson(false);
         }
     };
 
-    const currentStatus = contact.a ? 'a' : contact.b ? 'b' : contact.c ? 'c' : '';
-    const faviconUrl = getFaviconUrl(contact.website);
+    const handleDeleteContact = async () => {
+        if (!contact) return;
+        const ok = window.confirm(`Delete contact "${contact.contactName || contact.officeName || contact.id}"? This cannot be undone.`);
+        if (!ok) return;
+
+        const result = await deleteContact(contact.id);
+        if (result?.ok) {
+            navigate('/');
+        }
+    };
+
+    const currentStatus = officeRecord?.a ? 'a' : officeRecord?.b ? 'b' : officeRecord?.c ? 'c' : '';
+    const faviconUrl = getFaviconUrl(officeRecord?.website);
 
     return (
         <div className="space-y-6 max-w-6xl mx-auto pb-12 animate-fade-in">
@@ -206,6 +267,15 @@ export function ContactDetail() {
 
                 {/* Top Status Indicator */}
                 <div className="pr-4 flex items-center gap-3">
+                    {canDelete() && (
+                        <button
+                            onClick={handleDeleteContact}
+                            className="w-10 h-10 rounded-full border border-red-500/40 text-red-400 hover:bg-red-500/15 transition-colors flex items-center justify-center cursor-pointer"
+                            title="Delete Contact"
+                        >
+                            <Trash2 className="w-4 h-4" />
+                        </button>
+                    )}
                     <span className="text-xs font-bold text-gray-500 uppercase tracking-widest hidden sm:inline-block">Status</span>
                     <div className="flex items-center gap-1 bg-obsidian rounded-pill p-1 border border-white/5">
                         {[
@@ -218,7 +288,7 @@ export function ContactDetail() {
                             return (
                                 <button
                                     key={s.key}
-                                    onClick={() => setStatus(contact.id, s.key)}
+                                    onClick={() => officeContacts.forEach((c) => setStatus(c.id, s.key))}
                                     className={`w-10 h-10 sm:w-auto sm:px-5 rounded-full sm:rounded-pill text-sm font-bold transition-all cursor-pointer flex items-center justify-center ${isActive ? s.activeClass : s.inactiveClass
                                         }`}
                                 >
@@ -249,12 +319,11 @@ export function ContactDetail() {
                         </div>
 
                         <div className="flex-1">
-                            <h1 className="text-4xl lg:text-5xl font-bold text-white mb-2 tracking-tight">{contact.officeName || 'Unnamed Office'}</h1>
+                            <h1 className="text-4xl lg:text-5xl font-bold text-white mb-2 tracking-tight">{officeRecord?.officeName || 'Unnamed Office'}</h1>
                             <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[15px] text-gray-400 font-medium tracking-wide">
-                                {contact.contactName && <span className="flex items-center gap-1.5"><User className="w-5 h-5 text-emerald" /> {contact.contactName}</span>}
-                                {contact.city && <span className="flex items-center gap-1.5"><MapPin className="w-5 h-5 text-gray-500" /> {contact.city}{contact.state ? `, ${contact.state}` : ''}</span>}
-                                {contact.email && (
-                                    <a href={`mailto:${contact.email}`} className="flex items-center gap-1.5 hover:text-neon-yellow transition-colors">
+                                {officeRecord?.city && <span className="flex items-center gap-1.5"><MapPin className="w-5 h-5 text-gray-500" /> {officeRecord.city}{officeRecord.state ? `, ${officeRecord.state}` : ''}</span>}
+                                {officeRecord?.email && (
+                                    <a href={`mailto:${officeRecord.email}`} className="flex items-center gap-1.5 hover:text-neon-yellow transition-colors">
                                         <Mail className="w-5 h-5 text-gray-500" /> Email
                                     </a>
                                 )}
@@ -265,10 +334,11 @@ export function ContactDetail() {
                     {/* Add Contact Button */}
                     <button
                         onClick={handleCreateContact}
-                        className="flex-shrink-0 self-start md:self-auto bg-white/5 hover:bg-olive text-white hover:text-obsidian px-6 py-3 rounded-pill text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm border border-white/10 border-transparent"
+                        disabled={isCreatingPerson}
+                        className="flex-shrink-0 self-start md:self-auto bg-white/5 hover:bg-olive text-white hover:text-obsidian px-6 py-3 rounded-pill text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm border border-white/10 border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                         <UserPlus className="w-4 h-4" />
-                        Add Person to Office
+                        {isCreatingPerson ? 'Saving...' : 'Add Person to Office'}
                     </button>
                 </div>
             </div>
@@ -287,18 +357,18 @@ export function ContactDetail() {
                             <h3 className="text-lg font-bold text-white uppercase tracking-widest">Company Details</h3>
                         </div>
                         <div className="grid grid-cols-1 gap-1">
-                            <EditableField label="Office Name" value={contact.officeName} onSave={(v) => updateContact(contact.id, { officeName: v })} />
-                            <EditableField label="Street Address" value={contact.streetAddress} onSave={(v) => updateContact(contact.id, { streetAddress: v })} />
+                            <EditableField label="Office Name" value={officeRecord?.officeName} onSave={(v) => updateOfficeFields({ officeName: v })} />
+                            <EditableField label="Street Address" value={officeRecord?.streetAddress} onSave={(v) => updateOfficeFields({ streetAddress: v })} />
                             <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1">
-                                <EditableField label="City" value={contact.city} onSave={(v) => updateContact(contact.id, { city: v })} />
-                                <EditableField label="State" value={contact.state} onSave={(v) => updateContact(contact.id, { state: v })} />
-                                <EditableField label="Zip" value={contact.zip} onSave={(v) => updateContact(contact.id, { zip: v })} />
+                                <EditableField label="City" value={officeRecord?.city} onSave={(v) => updateOfficeFields({ city: v })} />
+                                <EditableField label="State" value={officeRecord?.state} onSave={(v) => updateOfficeFields({ state: v })} />
+                                <EditableField label="Zip" value={officeRecord?.zip} onSave={(v) => updateOfficeFields({ zip: v })} />
                             </div>
-                            <EditableField label="Website" value={contact.website} onSave={(v) => updateContact(contact.id, { website: v })} />
-                            <EditableField label="Mailing" value={contact.mailing} onSave={(v) => updateContact(contact.id, { mailing: v })} />
-                            <EditableField label="WHO" value={contact.who} onSave={(v) => updateContact(contact.id, { who: v })} />
-                            <EditableField label="Phone 1" value={contact.phone1} onSave={(v) => updateContact(contact.id, { phone1: v })} type="tel" />
-                            <EditableField label="Phone 2" value={contact.phone2} onSave={(v) => updateContact(contact.id, { phone2: v })} type="tel" />
+                            <EditableField label="Website" value={officeRecord?.website} onSave={(v) => updateOfficeFields({ website: v })} />
+                            <EditableField label="Mailing" value={officeRecord?.mailing} onSave={(v) => updateOfficeFields({ mailing: v })} />
+                            <EditableField label="WHO" value={officeRecord?.who} onSave={(v) => updateOfficeFields({ who: v })} />
+                            <EditableField label="Phone 1" value={officeRecord?.phone1} onSave={(v) => updateOfficeFields({ phone1: v })} type="tel" />
+                            <EditableField label="Phone 2" value={officeRecord?.phone2} onSave={(v) => updateOfficeFields({ phone2: v })} type="tel" />
                         </div>
                     </div>
 
@@ -322,7 +392,7 @@ export function ContactDetail() {
                                         placeholder="Add an important critical note..."
                                     />
                                     <div className="flex justify-end gap-2">
-                                        <button onClick={() => { setPinnedDraft(contact.pinnedNote || ''); setEditingPinned(false); }} className="px-4 py-2 rounded-full text-sm font-medium hover:bg-white/5 text-gray-400 hover:text-white cursor-pointer transition-colors">Cancel</button>
+                                        <button onClick={() => { setPinnedDraft(officeRecord?.pinnedNote || ''); setEditingPinned(false); }} className="px-4 py-2 rounded-full text-sm font-medium hover:bg-white/5 text-gray-400 hover:text-white cursor-pointer transition-colors">Cancel</button>
                                         <button onClick={savePinned} className="px-5 py-2 rounded-full text-sm font-bold bg-danger hover:bg-red-600 text-white transition-colors shadow-sm cursor-pointer">
                                             Save Note
                                         </button>
@@ -330,16 +400,16 @@ export function ContactDetail() {
                                 </div>
                             ) : (
                                 <div className="group/note">
-                                    {contact.pinnedNote ? (
+                                    {officeRecord?.pinnedNote ? (
                                         <p className="text-[15px] text-white leading-relaxed whitespace-pre-wrap pr-8">
-                                            {contact.pinnedNote}
+                                            {officeRecord.pinnedNote}
                                         </p>
                                     ) : (
                                         <p className="text-[15px] text-danger/60 italic">No critical note attached.</p>
                                     )}
                                     <button
                                         onClick={() => {
-                                            setPinnedDraft(contact.pinnedNote || '');
+                                            setPinnedDraft(officeRecord?.pinnedNote || '');
                                             setEditingPinned(true);
                                         }}
                                         className="absolute right-0 top-0 p-2 rounded-full opacity-0 group-hover/note:opacity-100 hover:bg-danger/20 transition-all cursor-pointer"
@@ -361,7 +431,7 @@ export function ContactDetail() {
                                 </div>
                                 <h3 className="text-lg font-bold text-white uppercase tracking-widest">Comments</h3>
                                 <span className="ml-auto bg-obsidian text-emerald text-xs font-bold px-3 py-1.5 rounded-full border border-white/5 shadow-inner">
-                                    {contact.notes.length}
+                                    {officeRecord?.notes?.length || 0}
                                 </span>
                             </div>
                         </div>
@@ -391,13 +461,13 @@ export function ContactDetail() {
 
                         {/* List */}
                         <div className="flex-1 overflow-auto p-4 space-y-3 custom-scrollbar">
-                            {contact.notes.length === 0 ? (
+                            {!officeRecord?.notes?.length ? (
                                 <div className="h-full flex flex-col items-center justify-center text-center px-4">
                                     <MoreHorizontal className="w-8 h-8 text-gray-700 mb-3" />
                                     <p className="text-gray-500 text-[15px]">No comments yet. Log activity above.</p>
                                 </div>
                             ) : (
-                                contact.notes.map((note) => (
+                                officeRecord.notes.map((note) => (
                                     <div key={note.id} className="bg-obsidian/50 border border-white/5 rounded-3xl p-5 hover:border-white/10 transition-colors">
                                         <p className="text-[15px] text-gray-300 leading-relaxed whitespace-pre-wrap">{note.text}</p>
                                         <p className="text-xs font-medium text-gray-500 mt-3 flex justify-end">
@@ -425,32 +495,21 @@ export function ContactDetail() {
                             </div>
                         </div>
 
-                        {/* Current Person */}
-                        <div className="mb-6 relative z-10">
-                            <h4 className="text-xs font-bold text-emerald uppercase tracking-widest mb-3">Current Person</h4>
-                            <div className="grid grid-cols-1 gap-1">
-                                <EditableField label="Contact Name" value={contact.contactName} onSave={(v) => updateContact(contact.id, { contactName: v })} />
-                                <EditableField label="Email Address" value={contact.email} onSave={(v) => updateContact(contact.id, { email: v })} />
-                            </div>
-                        </div>
-
-                        {/* Other People in Office */}
-                        {relatedContacts.length > 1 && (
-                            <div className="mb-6 border-t border-white/5 pt-6 relative z-10">
-                                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest mb-3">Others in Office</h4>
-                                <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-2">
-                                    {relatedContacts.filter(c => c.id !== contact.id).map(c => (
-                                        <div key={c.id} onClick={() => navigate(`/contact/${c.id}`)} className="flex items-center justify-between p-3 rounded-xl bg-obsidian/50 border border-white/5 hover:border-emerald/30 transition-colors cursor-pointer group/link">
-                                            <div>
-                                                <p className="text-white font-medium text-[15px]">{c.contactName || 'Unnamed Colleague'}</p>
-                                                {c.email && <p className="text-gray-400 text-sm">{c.email}</p>}
-                                            </div>
-                                            <ArrowLeft className="w-4 h-4 text-emerald rotate-180 opacity-0 group-hover/link:opacity-100 transition-opacity" />
+                        <div className="mb-6 relative z-10 space-y-4">
+                            <h4 className="text-xs font-bold text-emerald uppercase tracking-widest">People in This Office</h4>
+                            {officeContacts
+                                .slice()
+                                .sort((a, b) => (a.contactName || '').localeCompare(b.contactName || '') || a.id - b.id)
+                                .map((person) => (
+                                    <div key={person.id} className="rounded-2xl border border-white/10 bg-obsidian/50 p-4">
+                                        <div className="grid grid-cols-1 gap-1">
+                                            <EditableField label="Contact Name" value={person.contactName} onSave={(v) => updateContact(person.id, { contactName: v })} />
+                                            <EditableField label="Email Address" value={person.email} onSave={(v) => updateContact(person.id, { email: v })} />
+                                            <EditableField label="Phone" value={person.phone1} onSave={(v) => updateContact(person.id, { phone1: v })} />
                                         </div>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
+                                    </div>
+                                ))}
+                        </div>
                         {/* Add Person Form */}
                         <div className="border-t border-white/5 pt-6 relative z-10">
                             {!addingPerson ? (
@@ -476,12 +535,24 @@ export function ContactDetail() {
                                     </div>
                                     <div className="flex justify-end gap-2">
                                         <button onClick={() => { setAddingPerson(false); setNewPersonData({ name: '', email: '', phone1: '' }); }} className="px-4 py-2 rounded-pill text-sm font-medium hover:bg-white/5 text-gray-400 hover:text-white cursor-pointer transition-colors">Cancel</button>
-                                        <button onClick={() => {
-                                            if (!newPersonData.name.trim()) return;
-                                            addContact({ ...contact, contactName: newPersonData.name.trim(), email: newPersonData.email.trim(), phone1: newPersonData.phone1?.trim() || '', phone2: '', notes: [], pinnedNote: '', specialties: [], comments: '', a: false, b: false, c: false });
-                                            setAddingPerson(false);
-                                            setNewPersonData({ name: '', email: '', phone1: '' });
-                                        }} className="px-5 py-2 rounded-pill text-sm font-bold bg-emerald hover:bg-emerald/90 text-obsidian transition-colors shadow-sm cursor-pointer disabled:opacity-50" disabled={!newPersonData.name.trim()}>Save Colleague</button>
+                                        <button onClick={async () => {
+                                            if (!newPersonData.name.trim() || isCreatingPerson) return;
+                                            setIsCreatingPerson(true);
+                                            try {
+                                                const newId = await addContact({
+                                                    ...officeRecord,
+                                                    contactName: newPersonData.name.trim(),
+                                                    email: newPersonData.email.trim(),
+                                                    phone1: newPersonData.phone1?.trim() || '',
+                                                    phone2: '',
+                                                });
+                                                if (!newId) return;
+                                                setAddingPerson(false);
+                                                setNewPersonData({ name: '', email: '', phone1: '' });
+                                            } finally {
+                                                setIsCreatingPerson(false);
+                                            }
+                                        }} className="px-5 py-2 rounded-pill text-sm font-bold bg-emerald hover:bg-emerald/90 text-obsidian transition-colors shadow-sm cursor-pointer disabled:opacity-50" disabled={!newPersonData.name.trim() || isCreatingPerson}>{isCreatingPerson ? 'Saving...' : 'Save Colleague'}</button>
                                     </div>
                                 </div>
                             )}
@@ -498,18 +569,18 @@ export function ContactDetail() {
                         </div>
 
                         <div className="flex flex-wrap gap-2 mb-6">
-                            {(contact.specialties || []).map(s => (
+                            {(officeRecord?.specialties || []).map(s => (
                                 <div key={s} className="flex items-center gap-1.5 px-3 py-1.5 bg-obsidian border border-white/10 rounded-pill text-sm font-medium text-white shadow-sm">
                                     {s}
                                     <button
-                                        onClick={() => removeSpecialty(contact.id, s)}
+                                        onClick={() => officeContacts.forEach((c) => removeSpecialty(c.id, s))}
                                         className="text-gray-500 hover:text-danger hover:bg-white/5 rounded-full p-0.5 transition-colors cursor-pointer"
                                     >
                                         <X className="w-3.5 h-3.5" />
                                     </button>
                                 </div>
                             ))}
-                            {(!contact.specialties || contact.specialties.length === 0) && (
+                            {(!officeRecord?.specialties || officeRecord.specialties.length === 0) && (
                                 <span className="text-gray-500 text-[15px] italic">No specialties added yet.</span>
                             )}
                         </div>
@@ -523,7 +594,7 @@ export function ContactDetail() {
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && newSpecialty.trim()) {
                                         e.preventDefault();
-                                        addSpecialty(contact.id, newSpecialty.trim());
+                                        officeContacts.forEach((c) => addSpecialty(c.id, newSpecialty.trim()));
                                         setNewSpecialty('');
                                     }
                                 }}
@@ -536,7 +607,7 @@ export function ContactDetail() {
                             <button
                                 onClick={() => {
                                     if (newSpecialty.trim()) {
-                                        addSpecialty(contact.id, newSpecialty.trim());
+                                        officeContacts.forEach((c) => addSpecialty(c.id, newSpecialty.trim()));
                                         setNewSpecialty('');
                                     }
                                 }}
