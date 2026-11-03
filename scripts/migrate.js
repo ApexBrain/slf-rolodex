@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { initialData } from '../src/data.js'
+import { initialData } from '../.private/data.js'
 import dotenv from 'dotenv'
 
 dotenv.config({ path: '.env.local' })

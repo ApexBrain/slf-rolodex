@@ -26,6 +26,45 @@ const mapDbContactToClient = (c) => ({
     notes: c.notes || []
 });
 
+
+const toIds = (ids) => (Array.isArray(ids) ? ids : [ids]);
+const snapshot = (contacts, ids) => contacts.filter((c) => ids.includes(c.id));
+const restore = (set, previous) =>
+    set((state) => ({
+        contacts: state.contacts.map((c) => previous.find((p) => p.id === c.id) || c),
+    }));
+
+const digitsOnly = (v) => (v || '').replace(/\D/g, '');
+
+// (555) 123-4567 for any 10-digit (or 1+10) number; anything else is left exactly as typed.
+export const formatPhone = (value) => {
+    const d = digitsOnly(value);
+    const ten = d.length === 11 && d[0] === '1' ? d.slice(1) : d;
+    return ten.length === 10 ? `(${ten.slice(0, 3)}) ${ten.slice(3, 6)}-${ten.slice(6)}` : value;
+};
+
+// Possible existing matches for a contact about to be created.
+export const findPossibleDuplicates = (contacts, candidate) => {
+    const name = (candidate.officeName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const city = (candidate.city || '').toLowerCase().trim();
+    const email = (candidate.email || '').toLowerCase().trim();
+    const phone = digitsOnly(candidate.phone1);
+    return contacts
+        .filter((c) => {
+            if (email.includes('@') && (c.email || '').toLowerCase().trim() === email) return true;
+            if (phone.length >= 10 && [c.phone1, c.phone2, c.phone3, c.phone4].some((p) => digitsOnly(p).slice(-10) === phone.slice(-10))) return true;
+            const cn = (c.officeName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            return name.length > 3 && cn === name && (!city || (c.city || '').toLowerCase().trim() === city);
+        })
+        .slice(0, 5);
+};
+
+export const officeKey = (c) => {
+    const name = (c?.officeName || '').toLowerCase().replace(/\s+/g, ' ').trim();
+    if (!name) return '';
+    return `${name}|${(c.city || '').toLowerCase().trim()}`;
+};
+
 export const useStore = create((set, get) => ({
     contacts: [],
     session: null,
@@ -355,7 +394,7 @@ export const useStore = create((set, get) => ({
         set({ contacts: mappedData, isLoading: false });
     },
 
-    setSearch: (query) => set({ searchQuery: query }),
+    setSearch: (query) => set({ searchQuery: query, activeSearchQuery: query }),
     executeSearch: () => set((state) => ({ activeSearchQuery: state.searchQuery })),
     setCityFilter: (city) => set({ cityFilter: city }),
     setSpecialtyFilter: (specialty) => set({ specialtyFilter: specialty }),
@@ -396,6 +435,10 @@ export const useStore = create((set, get) => ({
             notes: 'notes',
         };
 
+        ['phone1', 'phone2', 'phone3', 'phone4'].forEach((k) => {
+            if (typeof updates[k] === 'string') updates = { ...updates, [k]: formatPhone(updates[k].trim()) };
+        });
+
         const dbUpdates = {};
         Object.entries(fieldMap).forEach(([clientKey, dbKey]) => {
             if (clientKey in updates) {
@@ -417,6 +460,7 @@ export const useStore = create((set, get) => ({
 
         if (error) {
             console.error('Error updating contact:', error);
+            get().notify('Could not save your changes. They were reverted.', 'error');
             if (previousContact) {
                 set((state) => ({
                     contacts: state.contacts.map((c) => (c.id === id ? previousContact : c)),
@@ -442,9 +486,9 @@ export const useStore = create((set, get) => ({
             zip: newContact.zip || '',
             website: newContact.website || '',
             mailing: newContact.mailing || '',
-            phone1: newContact.phone1 || '',
-            phone2: newContact.phone2 || '',
-            email: newContact.email || '',
+            phone1: formatPhone((newContact.phone1 || '').trim()),
+            phone2: formatPhone((newContact.phone2 || '').trim()),
+            email: (newContact.email || '').trim().toLowerCase(),
             who: newContact.who || '',
             comments: newContact.comments || '',
             a: !!newContact.a,
@@ -458,6 +502,7 @@ export const useStore = create((set, get) => ({
         const { data, error } = await supabase.from('contacts').insert(payload).select().single();
         if (error || !data) {
             console.error("Error adding contact", error);
+            get().notify('Could not create the contact.', 'error');
             return null;
         }
 
@@ -474,6 +519,7 @@ export const useStore = create((set, get) => ({
         const { error } = await supabase.from('contacts').delete().eq('id', id);
         if (error) {
             console.error('Error deleting contact:', error);
+            get().notify('Could not delete the contact.', 'error');
             set({ contacts: previousContacts });
             return { ok: false, error };
         }
@@ -481,106 +527,142 @@ export const useStore = create((set, get) => ({
         return { ok: true };
     },
 
-    setStatus: async (id, status) => {
-        const a = status === 'a';
-        const b = status === 'b';
-        const c = status === 'c';
-        
-        set((state) => ({
-            contacts: state.contacts.map((contact) =>
-                contact.id === id ? { ...contact, a, b, c } : contact
-            ),
-        }));
-
-        await supabase.from('contacts').update({ a, b, c }).eq('id', id);
-    },
-
-    addSpecialty: async (id, specialty) => {
-        let currentArray = [];
-        set((state) => ({
-            contacts: state.contacts.map((c) => {
-                if (c.id === id) {
-                    currentArray = c.specialties || [];
-                    if (!currentArray.some(s => s.toLowerCase() === specialty.toLowerCase())) {
-                        currentArray = [...currentArray, specialty];
-                        return { ...c, specialties: currentArray };
-                    }
-                }
-                return c;
-            })
-        }));
-
-        if (currentArray.length > 0) {
-            await supabase.from('contacts').update({ specialties: currentArray }).eq('id', id);
-        }
-    },
-
-    removeSpecialty: async (id, specialtyToRemove) => {
-        let newArray = [];
-        set((state) => ({
-            contacts: state.contacts.map((c) => {
-                if (c.id === id) {
-                    newArray = (c.specialties || []).filter(s => s !== specialtyToRemove);
-                    return { ...c, specialties: newArray };
-                }
-                return c;
-            }),
-        }));
-
-        await supabase.from('contacts').update({ specialties: newArray }).eq('id', id);
-    },
-
-    addNote: async (contactId, noteInput) => {
-        const text = typeof noteInput === 'string' ? noteInput : noteInput?.text || '';
-        const category = typeof noteInput === 'object' ? noteInput?.category || 'note' : 'note';
-        const trimmedText = text.trim();
-
-        if (!trimmedText) return;
-
-        const newNote = {
-            id: Date.now(),
-            text: trimmedText,
-            category,
-            timestamp: new Date().toISOString(),
-        };
-
-        let previousNotesArray = [];
-        let newNotesArray = [];
+    // ── Office-level writes ─────────────────────────────────────────────
+    // `ids` may be a single contact id or an array (every contact in the same office).
+    // Each action: optimistic update -> one DB call -> rollback + toast on failure.
+    setStatus: async (ids, status) => {
+        const idList = toIds(ids);
+        const patch = { a: status === 'a', b: status === 'b', c: status === 'c' };
+        const rollback = snapshot(get().contacts, idList);
 
         set((state) => ({
-            contacts: state.contacts.map((c) => {
-                if (c.id === contactId) {
-                    previousNotesArray = c.notes || [];
-                    newNotesArray = [newNote, ...previousNotesArray];
-                    return { ...c, notes: newNotesArray };
-                }
-                return c;
-            }),
+            contacts: state.contacts.map((c) => (idList.includes(c.id) ? { ...c, ...patch } : c)),
         }));
 
-        const { error } = await supabase.from('contacts').update({ notes: newNotesArray }).eq('id', contactId);
+        const { error } = await supabase.from('contacts').update(patch).in('id', idList);
         if (error) {
-            console.error('Error adding note:', error);
-            set((state) => ({
-                contacts: state.contacts.map((c) =>
-                    c.id === contactId ? { ...c, notes: previousNotesArray } : c
-                ),
-            }));
+            console.error('Error setting status:', error);
+            restore(set, rollback);
+            get().notify('Could not save the tier. Nothing was changed.', 'error');
+            return { ok: false, error };
         }
+        return { ok: true };
     },
 
-    addComment: async (contactId, text) => {
-        await get().addNote(contactId, { text, category: 'note' });
+    addSpecialty: async (ids, specialty) => {
+        const idList = toIds(ids);
+        const value = (specialty || '').trim();
+        if (!value) return { ok: false, reason: 'empty' };
+        const rollback = snapshot(get().contacts, idList);
+
+        set((state) => ({
+            contacts: state.contacts.map((c) => {
+                if (!idList.includes(c.id)) return c;
+                const current = c.specialties || [];
+                if (current.some((x) => x.toLowerCase() === value.toLowerCase())) return c;
+                return { ...c, specialties: [...current, value] };
+            }),
+        }));
+
+        const { error } = await supabase.rpc('add_contact_specialty', { p_contact_ids: idList, p_specialty: value });
+        if (error) {
+            console.error('Error adding specialty:', error);
+            restore(set, rollback);
+            get().notify('Could not add the specialty.', 'error');
+            return { ok: false, error };
+        }
+        return { ok: true };
     },
 
-    updatePinnedNote: async (contactId, text) => {
+    removeSpecialty: async (ids, specialty) => {
+        const idList = toIds(ids);
+        const rollback = snapshot(get().contacts, idList);
+
         set((state) => ({
             contacts: state.contacts.map((c) =>
-                c.id === contactId ? { ...c, pinnedNote: text } : c
+                idList.includes(c.id) ? { ...c, specialties: (c.specialties || []).filter((x) => x !== specialty) } : c
             ),
         }));
 
-        await supabase.from('contacts').update({ pinned_note: text }).eq('id', contactId);
+        const { error } = await supabase.rpc('remove_contact_specialty', { p_contact_ids: idList, p_specialty: specialty });
+        if (error) {
+            console.error('Error removing specialty:', error);
+            restore(set, rollback);
+            get().notify('Could not remove the specialty.', 'error');
+            return { ok: false, error };
+        }
+        return { ok: true };
+    },
+
+    addNote: async (ids, noteInput) => {
+        const idList = toIds(ids);
+        const text = (typeof noteInput === 'string' ? noteInput : noteInput?.text || '').trim();
+        if (!text) return { ok: false, reason: 'empty' };
+
+        const note = {
+            id: Date.now(),
+            text,
+            category: typeof noteInput === 'object' ? noteInput?.category || 'note' : 'note',
+            timestamp: new Date().toISOString(),
+        };
+        const author = get().user?.email?.toLowerCase() || '';
+        const rollback = snapshot(get().contacts, idList);
+
+        set((state) => ({
+            contacts: state.contacts.map((c) =>
+                idList.includes(c.id) ? { ...c, notes: [{ ...note, author }, ...(c.notes || [])] } : c
+            ),
+        }));
+
+        // Atomic server-side prepend: two people saving at once can no longer overwrite each other.
+        const { error } = await supabase.rpc('append_contact_note', { p_contact_ids: idList, p_note: note });
+        if (error) {
+            console.error('Error adding note:', error);
+            restore(set, rollback);
+            get().notify('Note was not saved. Please try again.', 'error');
+            return { ok: false, error };
+        }
+        return { ok: true };
+    },
+
+    addComment: async (ids, text) => get().addNote(ids, { text, category: 'note' }),
+
+    updatePinnedNote: async (ids, text) => {
+        const idList = toIds(ids);
+        const rollback = snapshot(get().contacts, idList);
+
+        set((state) => ({
+            contacts: state.contacts.map((c) => (idList.includes(c.id) ? { ...c, pinnedNote: text } : c)),
+        }));
+
+        const { error } = await supabase.from('contacts').update({ pinned_note: text }).in('id', idList);
+        if (error) {
+            console.error('Error saving pinned note:', error);
+            restore(set, rollback);
+            get().notify('Could not save the pinned note.', 'error');
+            return { ok: false, error };
+        }
+        return { ok: true };
+    },
+
+    // ── Toasts ──────────────────────────────────────────────────────────
+    toast: null,
+    notify: (message, type = 'info') => {
+        const id = Date.now();
+        set({ toast: { id, message, type } });
+        setTimeout(() => {
+            if (get().toast?.id === id) set({ toast: null });
+        }, 5000);
+    },
+    dismissToast: () => set({ toast: null }),
+
+    // Contacts that belong to the same practice: same name AND same city.
+    // (Name alone merged unrelated practices, e.g. "Angkor Chiropractic" in Modesto and San Jose.)
+    getOfficeContacts: (contact) => {
+        if (!contact) return [];
+        const key = officeKey(contact);
+        if (!key) return [contact];
+        return get().contacts.filter((c) => officeKey(c) === key);
     },
 
     getContact: (id) => {
@@ -591,18 +673,22 @@ export const useStore = create((set, get) => ({
         const state = get();
         let list = state.contacts;
 
-        // Text search
+        // Live multi-term search (every word must match somewhere). Phones match by digits only.
         const q = state.activeSearchQuery.toLowerCase().trim();
         if (q) {
-            list = list.filter(
-                (c) =>
-                    (c.officeName?.toLowerCase() || '').includes(q) ||
-                    (c.contactName?.toLowerCase() || '').includes(q) ||
-                    (c.city?.toLowerCase() || '').includes(q) ||
-                    (c.email?.toLowerCase() || '').includes(q) ||
-                    (c.who?.toLowerCase() || '').includes(q) ||
-                    (c.comments?.toLowerCase() || '').includes(q)
-            );
+            const terms = q.split(/\s+/).filter(Boolean);
+            list = list.filter((c) => {
+                const text = [
+                    c.officeName, c.contactName, c.city, c.email, c.who, c.comments,
+                    c.streetAddress, c.zip, c.website, (c.specialties || []).join(' '),
+                ].join(' ').toLowerCase();
+                const phones = [c.phone1, c.phone2, c.phone3, c.phone4].map(digitsOnly).join(' ');
+                return terms.every((t) => {
+                    if (text.includes(t)) return true;
+                    const td = digitsOnly(t);
+                    return td.length >= 3 && phones.includes(td);
+                });
+            });
         }
 
         // City filter

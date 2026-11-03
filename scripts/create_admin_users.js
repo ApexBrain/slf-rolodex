@@ -1,4 +1,5 @@
 import dotenv from 'dotenv';
+import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 
 dotenv.config({ path: '.env.local' });
@@ -15,16 +16,17 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
     auth: { autoRefreshToken: false, persistSession: false },
 });
 
-const adminUsers = [
-    {
-        email: 'chris@scrantonlawfirm.com',
-        password: 'chris@scrantonlawfirm.com',
-    },
-    {
-        email: 'andresl@scrantonlawfirm.com',
-        password: 'andresl@scrantonlawfirm.com',
-    },
-];
+// Usage: node scripts/create_admin_users.js admin1@firm.com admin2@firm.com
+// A random one-time password is generated per user and printed once. Never commit passwords.
+const adminUsers = process.argv.slice(2).map((email) => ({
+    email,
+    password: randomBytes(18).toString('base64url'),
+}));
+
+if (adminUsers.length === 0) {
+    console.error('Pass at least one admin email: node scripts/create_admin_users.js user@firm.com');
+    process.exit(1);
+}
 
 async function findAuthUserByEmail(email) {
     let page = 1;
@@ -78,6 +80,7 @@ async function ensureAdminUser({ email, password }) {
 
     if (upsertError) throw upsertError;
     console.log(`Ensured admin role: ${normalizedEmail}`);
+    console.log(`  One-time password (change after first login): ${password}`);
 }
 
 async function run() {

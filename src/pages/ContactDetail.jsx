@@ -143,6 +143,7 @@ export function ContactDetail() {
     const getStats = useStore((s) => s.getStats);
     const canDelete = useStore((s) => s.canDelete);
     const deleteContact = useStore((s) => s.deleteContact);
+    const getOfficeContacts = useStore((s) => s.getOfficeContacts);
 
     const contact = contacts.find(c => c.id === Number(id)) || null;
     const stats = getStats();
@@ -159,8 +160,8 @@ export function ContactDetail() {
 
     const relatedContacts = useMemo(() => {
         if (!contact || !contact.officeName) return [];
-        return contacts.filter(c => c.officeName === contact.officeName && c.officeName);
-    }, [contacts, contact?.officeName]);
+        return getOfficeContacts(contact);
+    }, [contacts, contact?.officeName, contact?.city]);
     const officeContacts = relatedContacts.length > 0 ? relatedContacts : (contact ? [contact] : []);
     const officeRecord = officeContacts[0] || contact;
 
@@ -198,13 +199,13 @@ export function ContactDetail() {
 
     const savePinned = async () => {
         if (!officeContacts.length) return;
-        await Promise.all(officeContacts.map((c) => updatePinnedNote(c.id, pinnedDraft)));
-        setEditingPinned(false);
+        const result = await updatePinnedNote(officeContacts.map((c) => c.id), pinnedDraft);
+        if (result?.ok) setEditingPinned(false);
     };
 
     const handleSubmitComment = () => {
         if (!commentText.trim() || officeContacts.length === 0) return;
-        officeContacts.forEach((c) => addComment(c.id, commentText.trim()));
+        addComment(officeContacts.map((c) => c.id), commentText.trim());
         setCommentText('');
     };
 
@@ -288,7 +289,7 @@ export function ContactDetail() {
                             return (
                                 <button
                                     key={s.key}
-                                    onClick={() => officeContacts.forEach((c) => setStatus(c.id, s.key))}
+                                    onClick={() => setStatus(officeContacts.map((c) => c.id), s.key)}
                                     className={`w-10 h-10 sm:w-auto sm:px-5 rounded-full sm:rounded-pill text-sm font-bold transition-all cursor-pointer flex items-center justify-center ${isActive ? s.activeClass : s.inactiveClass
                                         }`}
                                 >
@@ -470,7 +471,8 @@ export function ContactDetail() {
                                 officeRecord.notes.map((note) => (
                                     <div key={note.id} className="bg-obsidian/50 border border-white/5 rounded-3xl p-5 hover:border-white/10 transition-colors">
                                         <p className="text-[15px] text-gray-300 leading-relaxed whitespace-pre-wrap">{note.text}</p>
-                                        <p className="text-xs font-medium text-gray-500 mt-3 flex justify-end">
+                                        <p className="text-xs font-medium text-gray-500 mt-3 flex justify-end gap-2">
+                                            {note.author && <span>{note.author.split('@')[0]} ·</span>}
                                             {relativeDate(note.timestamp)}
                                         </p>
                                     </div>
@@ -573,7 +575,7 @@ export function ContactDetail() {
                                 <div key={s} className="flex items-center gap-1.5 px-3 py-1.5 bg-obsidian border border-white/10 rounded-pill text-sm font-medium text-white shadow-sm">
                                     {s}
                                     <button
-                                        onClick={() => officeContacts.forEach((c) => removeSpecialty(c.id, s))}
+                                        onClick={() => removeSpecialty(officeContacts.map((c) => c.id), s)}
                                         className="text-gray-500 hover:text-danger hover:bg-white/5 rounded-full p-0.5 transition-colors cursor-pointer"
                                     >
                                         <X className="w-3.5 h-3.5" />
@@ -594,7 +596,7 @@ export function ContactDetail() {
                                 onKeyDown={(e) => {
                                     if (e.key === 'Enter' && newSpecialty.trim()) {
                                         e.preventDefault();
-                                        officeContacts.forEach((c) => addSpecialty(c.id, newSpecialty.trim()));
+                                        addSpecialty(officeContacts.map((c) => c.id), newSpecialty.trim());
                                         setNewSpecialty('');
                                     }
                                 }}
@@ -607,7 +609,7 @@ export function ContactDetail() {
                             <button
                                 onClick={() => {
                                     if (newSpecialty.trim()) {
-                                        officeContacts.forEach((c) => addSpecialty(c.id, newSpecialty.trim()));
+                                        addSpecialty(officeContacts.map((c) => c.id), newSpecialty.trim());
                                         setNewSpecialty('');
                                     }
                                 }}
