@@ -18,9 +18,17 @@ const supabase = createClient(supabaseUrl, serviceRoleKey, {
 
 // Usage: node scripts/create_admin_users.js admin1@firm.com admin2@firm.com
 // A random one-time password is generated per user and printed once. Never commit passwords.
+//
+// Local development only: ADMIN_PASSWORD=... node scripts/create_admin_users.js you@firm.com
+// forces a specific password for every email passed. It is read from the environment so it
+// never lands in git. Rotate it before real use.
+const forcedPassword = process.env.ADMIN_PASSWORD;
+if (forcedPassword) {
+    console.warn('WARNING: using ADMIN_PASSWORD from the environment. Rotate it before production.');
+}
 const adminUsers = process.argv.slice(2).map((email) => ({
     email,
-    password: randomBytes(18).toString('base64url'),
+    password: forcedPassword || randomBytes(18).toString('base64url'),
 }));
 
 if (adminUsers.length === 0) {
@@ -80,7 +88,7 @@ async function ensureAdminUser({ email, password }) {
 
     if (upsertError) throw upsertError;
     console.log(`Ensured admin role: ${normalizedEmail}`);
-    console.log(`  One-time password (change after first login): ${password}`);
+    if (!forcedPassword) console.log(`  One-time password (change after first login): ${password}`);
 }
 
 async function run() {
