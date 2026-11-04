@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-    Pencil, Check, X, Mail, Globe, Send, Search, UserPlus, Plus, Phone, ChevronLeft, MessageSquare, Navigation
+    Pencil, Check, X, Mail, Globe, Send, Search, UserPlus, Plus, Phone, ChevronLeft, MessageSquare, Navigation, Share
 } from 'lucide-react';
+import { ShareContactSheet } from '../components/ShareContact.jsx';
 import { initialsFor, tierOf, TIER_AVATAR } from '../components/ContactList.jsx';
 import { useStore } from '../store.js';
 
@@ -19,7 +20,7 @@ const isDialable = (v) => /\d{7,}/.test((v || '').replace(/\D/g, ''));
 const webHref = (v) => (!v ? null : /^https?:\/\//i.test(v.trim()) ? v.trim() : `https://${v.trim()}`);
 const mapsHref = (q) => (q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : null);
 
-function ActionButton({ href, icon: Icon, label, external }) {
+function ActionButton({ href, onClick, icon: Icon, label, external }) {
     const inner = (
         <>
             <span className="w-12 h-12 rounded-full bg-white/[0.08] flex items-center justify-center group-hover:bg-white/[0.14] transition-colors">
@@ -28,6 +29,13 @@ function ActionButton({ href, icon: Icon, label, external }) {
             <span className="mt-1.5 text-[11px] font-medium">{label}</span>
         </>
     );
+    if (onClick) {
+        return (
+            <button type="button" onClick={onClick} className="group flex flex-col items-center text-emerald active:opacity-60 cursor-pointer">
+                {inner}
+            </button>
+        );
+    }
     if (!href) return <span className="flex flex-col items-center text-gray-600 opacity-60" aria-disabled="true">{inner}</span>;
     return (
         <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="group flex flex-col items-center text-emerald active:opacity-60">
@@ -181,7 +189,8 @@ export function ContactDetail({ embedded = false }) {
     const pinnedRef = useRef(null);
     const [editMode, setEditMode] = useState(false);
     const [showAllNotes, setShowAllNotes] = useState(false);
-    useEffect(() => { setEditMode(false); setShowAllNotes(false); setAddingPerson(false); setEditingPinned(false); }, [id]);
+    const [shareOpen, setShareOpen] = useState(false);
+    useEffect(() => { setEditMode(false); setShowAllNotes(false); setShareOpen(false); setAddingPerson(false); setEditingPinned(false); }, [id]);
 
     const relatedContacts = useMemo(() => {
         if (!contact || !contact.officeName) return [];
@@ -334,12 +343,13 @@ export function ContactDetail({ embedded = false }) {
                             </button>
                         ))}
                     </div>
-                    <div className="mt-5 w-full max-w-[440px] grid grid-cols-5 gap-1 px-1">
+                    <div className="mt-5 w-full max-w-[480px] grid grid-cols-6 gap-0.5 px-0.5">
                         <ActionButton href={callNum ? `tel:${digits(callNum)}` : null} icon={Phone} label="call" />
                         <ActionButton href={callNum ? `sms:${digits(callNum)}` : null} icon={MessageSquare} label="text" />
                         <ActionButton href={emailAddr ? `mailto:${emailAddr}` : null} icon={Mail} label="email" />
                         <ActionButton href={mapsHref(fullAddress)} icon={Navigation} label="directions" external />
                         <ActionButton href={webHref(officeRecord?.website)} icon={Globe} label="website" external />
+                        <ActionButton onClick={() => setShareOpen(true)} icon={Share} label="share" />
                     </div>
                 </div>
 
@@ -554,6 +564,13 @@ export function ContactDetail({ embedded = false }) {
                     </button>
                 )}
             </div>
+            <ShareContactSheet
+                open={shareOpen}
+                onClose={() => setShareOpen(false)}
+                contact={contact}
+                office={officeRecord}
+                link={`${window.location.origin}/contact/${contact.id}`}
+            />
         </div>
         </EditContext.Provider>
     );
