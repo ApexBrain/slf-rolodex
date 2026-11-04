@@ -1,13 +1,12 @@
 -- SLF Rolodex: merge duplicate contacts (same person entered twice)
 -- REBUILT FROM THE LIVE DATABASE (live ids differ from the repo's data.js ids; the first version of this
 -- file used repo ids and would have merged the wrong people -- do not use older copies).
--- 65 groups, 70 rows removed. Every group was reviewed by hand.
+-- 69 groups, 74 rows removed. Every group was reviewed by hand.
 -- SAFETY GUARD: each id carries an expected name fragment. If any row in a group does not contain that
 -- fragment in contact_name/office_name (id drift, already merged, edited), the WHOLE group is skipped.
 -- Run AFTER 002_cleanup_and_integrity.sql and AFTER exporting a backup of contacts. Idempotent.
 -- Reversible: removed rows are copied to public.contacts_merge_archive (with merged_into) before deletion.
 -- NOT merged: Latch (David and Daniel are different people), Ali Reza Bamdad (different doctor from Alex),
--- and 4 pairs awaiting an owner decision: Keystone (789/792), Da-Ren Chen (451/1018), Schreiber (601/639), Feinberg (1109/1120).
 -- Test rows 1341/1342 ("Andres test") should simply be deleted from the app.
 -- Survivor per group: has a tier > most complete record > lowest id. A group with conflicting tiers is skipped.
 
@@ -155,7 +154,15 @@ insert into merge_groups values
     (64,967,'levine'),
     (64,983,'levine'),
     (65,1056,'macchesn'),
-    (65,1058,'macchesn');
+    (65,1058,'macchesn'),
+    (66,789,'rayman'),
+    (66,792,'rayman'),
+    (67,451,'chen'),
+    (67,1018,'chen'),
+    (68,601,'schreiber'),
+    (68,639,'schreiber'),
+    (69,1109,'feinberg'),
+    (69,1120,'feinberg');
 
 -- Owner decision: Advocate Capital keeps tier A (drop the stray C on the duplicate before merging).
 update public.contacts set c = false
