@@ -1,8 +1,9 @@
 import { useState, useMemo, useEffect, useRef, useSyncExternalStore } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, MapPin, X, Download, Plus, Phone, AlertTriangle } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { Search, ChevronLeft, ChevronRight, MapPin, X, Download, Plus, Phone, AlertTriangle, List } from 'lucide-react';
 import { useStore, findPossibleDuplicates } from '../store.js';
-import { MobileContactList } from '../components/MobileContactList.jsx';
+import { ContactList } from '../components/ContactList.jsx';
+import { ContactDetail } from './ContactDetail.jsx';
 
 function StatusBadge({ contact }) {
     const getActiveStyles = () => {
@@ -23,6 +24,35 @@ function StatusBadge({ contact }) {
     return <span className="flex items-center justify-center w-8 h-8 rounded-full text-[15px] bg-slate-dark text-gray-500 font-bold border border-white/10 shadow-none" title="None">—</span>;
 }
 
+function EmptyPane({ contacts, onNew }) {
+    const counts = useMemo(() => ({
+        a: contacts.filter((c) => c.a).length,
+        b: contacts.filter((c) => c.b).length,
+        c: contacts.filter((c) => c.c).length,
+    }), [contacts]);
+    return (
+        <div className="h-full flex flex-col items-center justify-center text-center px-8">
+            <img src="/icons/icon-192.png" alt="" className="w-20 h-20 rounded-[22px] shadow-card" />
+            <h2 className="mt-5 text-[22px] font-bold text-white">Select a contact</h2>
+            <p className="mt-1 text-[15px] text-gray-500">Pick one from the list, search, or press ↓ to start at the top.</p>
+            <div className="mt-6 flex gap-2">
+                {[['A', counts.a], ['B', counts.b], ['C', counts.c]].map(([t, n]) => (
+                    <span key={t} className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[13px] text-gray-300">
+                        <b className="text-white">{n.toLocaleString()}</b> tier {t}
+                    </span>
+                ))}
+                <span className="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-[13px] text-gray-300">
+                    <b className="text-white">{contacts.length.toLocaleString()}</b> total
+                </span>
+            </div>
+            <button onClick={onNew} className="mt-6 h-10 px-5 rounded-full bg-emerald text-obsidian font-bold text-[14px] flex items-center gap-2 cursor-pointer hover:bg-emerald/90">
+                <Plus className="w-4 h-4" strokeWidth={2.5} /> New contact
+            </button>
+        </div>
+    );
+}
+
+const VIEW_KEY = 'slf-rolodex-view';
 const PHONE_QUERY = '(max-width: 767px)';
 function useIsPhone() {
     return useSyncExternalStore(
@@ -34,6 +64,15 @@ function useIsPhone() {
 
 export function Dashboard() {
     const isPhone = useIsPhone();
+    const { id } = useParams();
+    const selectedId = id ? Number(id) : null;
+    const [tableView, setTableView] = useState(() => {
+        try { return localStorage.getItem(VIEW_KEY) === 'table'; } catch { return false; }
+    });
+    const setView = (table) => {
+        setTableView(table);
+        try { localStorage.setItem(VIEW_KEY, table ? 'table' : 'list'); } catch { /* private mode */ }
+    };
     const contacts = useStore((s) => s.contacts);
     const searchQuery = useStore((s) => s.searchQuery);
     const setSearch = useStore((s) => s.setSearch);
@@ -155,32 +194,49 @@ export function Dashboard() {
         URL.revokeObjectURL(url);
     };
 
+    const listProps = {
+        contacts: filtered,
+        totalCount: contacts.length,
+        stats,
+        searchQuery,
+        setSearch,
+        statusFilter,
+        setStatusFilter,
+        cityFilter,
+        setCityFilter,
+        specialtyFilter,
+        setSpecialtyFilter,
+        onClear: clearFilters,
+        onNew: () => setShowNewModal(true),
+        onOpen: (cid) => navigate(`/contact/${cid}`),
+    };
+
     return (
         <div className="animate-fade-in">
-            {/* ── Phone: contacts-app style list ── */}
             {isPhone ? (
-            <div className="md:hidden">
-                <MobileContactList
-                    contacts={filtered}
-                    totalCount={contacts.length}
-                    stats={stats}
-                    searchQuery={searchQuery}
-                    setSearch={setSearch}
-                    statusFilter={statusFilter}
-                    setStatusFilter={setStatusFilter}
-                    cityFilter={cityFilter}
-                    setCityFilter={setCityFilter}
-                    specialtyFilter={specialtyFilter}
-                    setSpecialtyFilter={setSpecialtyFilter}
-                    onClear={clearFilters}
-                    onNew={() => setShowNewModal(true)}
-                    onOpen={(id) => navigate(`/contact/${id}`)}
-                />
-            </div>
-
+                selectedId ? <ContactDetail /> : <ContactList variant="page" {...listProps} />
+            ) : !tableView ? (
+                /* ── Desktop: two panes, like Contacts on a Mac ── */
+                <div className="flex h-[calc(100dvh-57px)]">
+                    <aside className="w-[340px] lg:w-[380px] xl:w-[400px] shrink-0 border-r border-white/5 bg-[#151816]">
+                        <ContactList
+                            variant="pane"
+                            {...listProps}
+                            searchRef={searchRef}
+                            selectedId={selectedId}
+                            onExport={canExport() ? exportToCSV : undefined}
+                            onTableView={() => setView(true)}
+                        />
+                    </aside>
+                    <section data-pane className="flex-1 min-w-0 overflow-y-auto">
+                        {selectedId
+                            ? <ContactDetail embedded />
+                            : <EmptyPane contacts={contacts} onNew={() => setShowNewModal(true)} />}
+                    </section>
+                </div>
             ) : (
-            /* ── Desktop / tablet ── */
-            <div className="hidden md:block space-y-6">
+            /* ── Desktop: table view ── */
+            <div className="max-w-[1400px] mx-auto px-6 lg:px-8 py-8 space-y-6">
             {/* ── Page Header & Filters ── */}
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 bg-slate-dark/50 backdrop-blur-md rounded-3xl p-3 border border-white/5 shadow-card">
                 {/* Logo */}
@@ -288,6 +344,15 @@ export function Dashboard() {
                                 </button>
                             )}
 
+                            <button
+                                onClick={() => setView(false)}
+                                className="flex items-center gap-2 px-4 py-1.5 rounded-pill text-[13px] font-bold bg-white/5 hover:bg-white/10 text-white border border-white/10 transition-all cursor-pointer"
+                                title="Back to the contacts list"
+                            >
+                                <List className="w-4 h-4" />
+                                List view
+                            </button>
+
                             {/* Add New Contact */}
                             <button
                                 onClick={() => setShowNewModal(true)}
@@ -337,7 +402,7 @@ export function Dashboard() {
                     {pageData.map((contact) => {
                         const callable = contact.phone1 && /\d{7,}/.test(contact.phone1.replace(/\D/g, ''));
                         const tel = callable ? `tel:${contact.phone1.replace(/[^\d+]/g, '')}` : null;
-                        const open = () => navigate(`/contact/${contact.id}`);
+                        const open = () => { setView(false); navigate(`/contact/${contact.id}`); };
                         return (
                         <div
                             key={contact.id}

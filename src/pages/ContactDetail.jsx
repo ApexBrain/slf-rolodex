@@ -1,10 +1,9 @@
 import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-    ArrowLeft, Pencil, Check, X, Mail, Globe, MapPin,
-    Pin, Send, Building2, User, Activity, MoreHorizontal, Search, UserPlus, Tag, Plus, Trash2, Phone, ChevronLeft, MessageSquare, Navigation
+    Pencil, Check, X, Mail, Globe, Send, Search, UserPlus, Plus, Phone, ChevronLeft, MessageSquare, Navigation
 } from 'lucide-react';
-import { initialsFor, tierOf, TIER_AVATAR } from '../components/MobileContactList.jsx';
+import { initialsFor, tierOf, TIER_AVATAR } from '../components/ContactList.jsx';
 import { useStore } from '../store.js';
 
 // ── Helpers ──
@@ -12,20 +11,8 @@ function relativeDate(isoString) {
     return new Date(isoString).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
-function getFaviconUrl(url) {
-    if (!url) return null;
-    try {
-        let cleanUrl = url.trim();
-        if (!cleanUrl.startsWith('http')) cleanUrl = 'http://' + cleanUrl;
-        const dom = new URL(cleanUrl).hostname;
-        return `https://s2.googleusercontent.com/s2/favicons?domain=${dom}&sz=64`;
-    } catch (e) {
-        return null;
-    }
-}
-
-// On phones, fields are read-only until the user taps Edit (no hover on touch screens).
-const MobileEditContext = createContext(false);
+// Fields are read-only until the user taps Edit (phone and desktop alike).
+const EditContext = createContext(false);
 
 const digits = (v) => (v || '').replace(/[^\d+]/g, '');
 const isDialable = (v) => /\d{7,}/.test((v || '').replace(/\D/g, ''));
@@ -35,7 +22,7 @@ const mapsHref = (q) => (q ? `https://www.google.com/maps/search/?api=1&query=${
 function ActionButton({ href, icon: Icon, label, external }) {
     const inner = (
         <>
-            <span className="w-12 h-12 rounded-full bg-white/[0.08] flex items-center justify-center">
+            <span className="w-12 h-12 rounded-full bg-white/[0.08] flex items-center justify-center group-hover:bg-white/[0.14] transition-colors">
                 <Icon className="w-5 h-5" />
             </span>
             <span className="mt-1.5 text-[11px] font-medium">{label}</span>
@@ -43,7 +30,7 @@ function ActionButton({ href, icon: Icon, label, external }) {
     );
     if (!href) return <span className="flex flex-col items-center text-gray-600 opacity-60" aria-disabled="true">{inner}</span>;
     return (
-        <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="flex flex-col items-center text-emerald active:opacity-60">
+        <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="group flex flex-col items-center text-emerald active:opacity-60">
             {inner}
         </a>
     );
@@ -55,15 +42,29 @@ function InfoRow({ label, value, href, external }) {
         <div className="px-4 py-2.5 border-b border-white/[0.06] last:border-0">
             <p className="text-[13px] text-gray-500">{label}</p>
             {href ? (
-                <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="block text-[16px] text-emerald break-words active:opacity-60">{value}</a>
+                <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="block text-[16px] md:text-[15px] text-emerald break-words hover:underline active:opacity-60">{value}</a>
             ) : (
-                <p className="text-[16px] text-white break-words whitespace-pre-wrap">{value}</p>
+                <p className="text-[16px] md:text-[15px] text-white break-words whitespace-pre-wrap">{value}</p>
             )}
         </div>
     );
 }
 
-// ── Editable Field with pencil icon ──
+function Section({ title, right, children, tone }) {
+    return (
+        <section>
+            <div className="flex items-center justify-between px-1 mb-1.5 min-h-[20px]">
+                <h3 className={`text-[12px] font-semibold uppercase tracking-wider ${tone === 'danger' ? 'text-danger/90' : 'text-gray-500'}`}>{title}</h3>
+                {right}
+            </div>
+            <div className={`rounded-2xl border overflow-hidden ${tone === 'danger' ? 'bg-danger/10 border-danger/25' : 'bg-slate-dark border-white/5'}`}>
+                {children}
+            </div>
+        </section>
+    );
+}
+
+// ── Editable field (shown in Edit mode): tap the value to change it ──
 function EditableField({ label, value, onSave, multiline = false }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(value || '');
@@ -84,7 +85,6 @@ function EditableField({ label, value, onSave, multiline = false }) {
             setEditing(false);
             return;
         }
-
         setIsSaving(true);
         try {
             const result = await onSave(draft);
@@ -95,13 +95,13 @@ function EditableField({ label, value, onSave, multiline = false }) {
         }
     };
     const cancel = () => { setDraft(value || ''); setEditing(false); };
-    const mobileEdit = useContext(MobileEditContext);
+    const inputClass = 'flex-1 min-w-0 bg-obsidian border border-white/10 rounded-xl px-3 py-2 text-[16px] md:text-[15px] text-white outline-none focus:border-emerald/60 transition-colors';
 
     return (
-        <div className={`group border-b border-white/5 py-3 last:border-0 relative ${!value && !mobileEdit && !editing ? 'hidden md:block' : ''}`}>
-            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">{label}</label>
+        <div className="px-4 py-2.5 border-b border-white/[0.06] last:border-0">
+            <label className="text-[13px] text-gray-500 block">{label}</label>
             {editing ? (
-                <div className="flex items-start gap-2 mt-2">
+                <div className="flex items-start gap-2 mt-1.5">
                     {multiline ? (
                         <textarea
                             ref={ref}
@@ -112,7 +112,7 @@ function EditableField({ label, value, onSave, multiline = false }) {
                                 if (e.key === 'Escape') cancel();
                             }}
                             rows={3}
-                            className="flex-1 bg-obsidian border border-white/10 rounded-xl px-4 py-3 text-base text-white resize-none outline-none focus:border-neon-yellow transition-colors"
+                            className={`${inputClass} resize-none`}
                         />
                     ) : (
                         <input
@@ -124,55 +124,35 @@ function EditableField({ label, value, onSave, multiline = false }) {
                                 if (e.key === 'Enter') save();
                                 if (e.key === 'Escape') cancel();
                             }}
-                            className="flex-1 bg-obsidian border border-white/10 rounded-xl px-4 py-3 text-base text-white outline-none focus:border-neon-yellow transition-colors"
+                            className={inputClass}
                         />
                     )}
-                    <div className="flex flex-col gap-1">
-                        <button
-                            onClick={save}
-                            disabled={isSaving}
-                            className="p-2.5 rounded-xl bg-neon-yellow hover:opacity-80 text-obsidian transition-colors cursor-pointer disabled:opacity-60"
-                        >
-                            <Check className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                            onClick={cancel}
-                            disabled={isSaving}
-                            className="p-2.5 rounded-xl bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white transition-colors cursor-pointer disabled:opacity-60"
-                        >
-                            <X className="w-3.5 h-3.5" />
-                        </button>
-                    </div>
-                </div>
-            ) : (
-                <div className="flex items-start gap-2 pr-8 mt-1">
-                    {/* Render Phone Link if label contains "Phone" */}
-                    {label.includes('Phone') && value ? (
-                        <p className="text-[15px] text-white break-words leading-relaxed">
-                            <a href={`tel:${value}`} className="hover:text-neon-yellow transition-colors underline decoration-white/20 underline-offset-4">
-                                {value}
-                            </a>
-                        </p>
-                    ) : (
-                        <p className="text-[15px] text-white break-words leading-relaxed">{value || <span className="text-gray-600 italic">—</span>}</p>
-                    )}
-                    <button
-                        onClick={() => setEditing(true)}
-                        className={`absolute right-0 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/5 transition-all cursor-pointer ${mobileEdit ? 'opacity-100' : 'hidden md:block md:opacity-0 md:group-hover:opacity-100'}`}
-                        title="Edit"
-                    >
-                        <Pencil className="w-3.5 h-3.5 text-neon-yellow" />
+                    <button onClick={save} disabled={isSaving} aria-label="Save" className="w-9 h-9 shrink-0 rounded-full bg-emerald text-obsidian flex items-center justify-center cursor-pointer disabled:opacity-60">
+                        <Check className="w-4 h-4" strokeWidth={3} />
+                    </button>
+                    <button onClick={cancel} disabled={isSaving} aria-label="Cancel" className="w-9 h-9 shrink-0 rounded-full bg-white/5 hover:bg-white/10 text-gray-400 flex items-center justify-center cursor-pointer disabled:opacity-60">
+                        <X className="w-4 h-4" />
                     </button>
                 </div>
+            ) : (
+                <button type="button" onClick={() => setEditing(true)} className="group w-full flex items-center gap-2 text-left mt-0.5 cursor-text">
+                    <span className={`flex-1 min-w-0 text-[16px] md:text-[15px] break-words ${value ? 'text-white' : 'text-gray-600'}`}>
+                        {value || `Add ${label.toLowerCase()}`}
+                    </span>
+                    <Pencil className="w-3.5 h-3.5 shrink-0 text-neon-yellow opacity-50 group-hover:opacity-100 transition-opacity" />
+                </button>
             )}
         </div>
     );
 }
 
-// ── Main Detail Page ──
-export function ContactDetail() {
+export function ContactDetail({ embedded = false }) {
     const { id } = useParams();
-    useEffect(() => { window.scrollTo(0, 0); }, [id]);
+    const rootRef = useRef(null);
+    useEffect(() => {
+        if (embedded) rootRef.current?.closest('[data-pane]')?.scrollTo(0, 0);
+        else window.scrollTo(0, 0);
+    }, [id, embedded]);
     const navigate = useNavigate();
     const contacts = useStore((s) => s.contacts);
     const updateContact = useStore((s) => s.updateContact);
@@ -199,8 +179,9 @@ export function ContactDetail() {
     const [isCreatingPerson, setIsCreatingPerson] = useState(false);
     const [newPersonData, setNewPersonData] = useState({ name: '', email: '', phone1: '' });
     const pinnedRef = useRef(null);
-    const [mobileEdit, setMobileEdit] = useState(false);
-    useEffect(() => { setMobileEdit(false); }, [id]);
+    const [editMode, setEditMode] = useState(false);
+    const [showAllNotes, setShowAllNotes] = useState(false);
+    useEffect(() => { setEditMode(false); setShowAllNotes(false); setAddingPerson(false); setEditingPinned(false); }, [id]);
 
     const relatedContacts = useMemo(() => {
         if (!contact || !contact.officeName) return [];
@@ -253,37 +234,6 @@ export function ContactDetail() {
         setCommentText('');
     };
 
-    const handleCreateContact = async () => {
-        if (isCreatingPerson) return;
-        setIsCreatingPerson(true);
-        try {
-            const newId = await addContact({
-                officeName: officeRecord?.officeName || '',
-                streetAddress: officeRecord?.streetAddress || '',
-                city: officeRecord?.city || '',
-                state: officeRecord?.state || '',
-                zip: officeRecord?.zip || '',
-                website: officeRecord?.website || '',
-                mailing: officeRecord?.mailing || '',
-                who: officeRecord?.who || '',
-                comments: officeRecord?.comments || '',
-                a: !!officeRecord?.a,
-                b: !!officeRecord?.b,
-                c: !!officeRecord?.c,
-                pinnedNote: officeRecord?.pinnedNote || '',
-                specialties: officeRecord?.specialties || [],
-                notes: officeRecord?.notes || [],
-            });
-            if (newId) {
-                navigate(`/contact/${newId}`);
-                // Smoothly scroll to the top so they can edit the Primary Contact section
-                window.scrollTo({ top: 0, behavior: 'smooth' });
-            }
-        } finally {
-            setIsCreatingPerson(false);
-        }
-    };
-
     const handleDeleteContact = async () => {
         if (!contact) return;
         const ok = window.confirm(`Delete contact "${contact.contactName || contact.officeName || contact.id}"? This cannot be undone.`);
@@ -296,7 +246,6 @@ export function ContactDetail() {
     };
 
     const currentStatus = officeRecord?.a ? 'a' : officeRecord?.b ? 'b' : officeRecord?.c ? 'c' : '';
-    const faviconUrl = getFaviconUrl(officeRecord?.website);
     const tier = tierOf(officeRecord);
     const callNum = [contact.phone1, officeRecord?.phone1, officeRecord?.phone2].find(isDialable);
     const emailAddr = contact.email || officeRecord?.email || '';
@@ -307,449 +256,305 @@ export function ContactDetail() {
     const heroSub = [contact.contactName, [officeRecord?.city, officeRecord?.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
     const goBack = () => (window.history.state?.idx > 0 ? navigate(-1) : navigate('/'));
 
+    const people = officeContacts
+        .slice()
+        .sort((a, b) => (a.contactName || '').localeCompare(b.contactName || '') || a.id - b.id);
+    const notes = officeRecord?.notes || [];
+    const visibleNotes = showAllNotes ? notes : notes.slice(0, 5);
+    const officeIds = officeContacts.map((c) => c.id);
+    const addSpecialtyNow = () => {
+        if (!newSpecialty.trim()) return;
+        addSpecialty(officeIds, newSpecialty.trim());
+        setNewSpecialty('');
+    };
+    const savePerson = async () => {
+        if (!newPersonData.name.trim() || isCreatingPerson) return;
+        setIsCreatingPerson(true);
+        try {
+            const newId = await addContact({
+                ...officeRecord,
+                contactName: newPersonData.name.trim(),
+                email: newPersonData.email.trim(),
+                phone1: newPersonData.phone1?.trim() || '',
+                phone2: '',
+            });
+            if (!newId) return;
+            setAddingPerson(false);
+            setNewPersonData({ name: '', email: '', phone1: '' });
+        } finally {
+            setIsCreatingPerson(false);
+        }
+    };
+    const smallInput = 'w-full bg-obsidian border border-white/10 rounded-xl px-3 py-2 text-[16px] md:text-[15px] text-white outline-none focus:border-emerald/60 transition-colors';
+
     return (
-        <MobileEditContext.Provider value={mobileEdit}>
-        <div className="space-y-4 md:space-y-6 max-w-6xl mx-auto pb-12 animate-fade-in">
-            {/* ── Phone: top bar ── */}
-            <div className="md:hidden sticky top-14 z-30 -mx-3 -mt-4 px-1 h-11 flex items-center justify-between bg-obsidian/95 backdrop-blur-md border-b border-white/5">
-                <button onClick={goBack} className="flex items-center h-10 pr-3 text-[16px] text-emerald active:opacity-60">
-                    <ChevronLeft className="w-6 h-6" strokeWidth={2.25} /> Contacts
-                </button>
-                <button onClick={() => setMobileEdit((v) => !v)} className="h-10 px-3 text-[16px] font-semibold text-emerald active:opacity-60">
-                    {mobileEdit ? 'Done' : 'Edit'}
-                </button>
-            </div>
-
-            {/* ── Phone: contact card header ── */}
-            <div className="md:hidden flex flex-col items-center text-center pt-2">
-                <span className={`w-24 h-24 rounded-full flex items-center justify-center text-[34px] font-bold ${TIER_AVATAR[tier]}`}>
-                    {initialsFor(officeRecord)}
-                </span>
-                <h1 className="mt-3 px-4 text-[26px] font-bold leading-tight text-white tracking-tight break-words">
-                    {officeRecord?.officeName || 'Unnamed Office'}
-                </h1>
-                {heroSub && <p className="mt-1 px-4 text-[15px] text-gray-400">{heroSub}</p>}
-                <div className="mt-3 inline-flex bg-white/[0.06] rounded-full p-1 gap-1" role="group" aria-label="Tier">
-                    {[['a', 'A'], ['b', 'B'], ['c', 'C'], ['', 'None']].map(([k, l]) => (
-                        <button
-                            key={l}
-                            onClick={() => setStatus(officeContacts.map((c) => c.id), k)}
-                            className={`h-8 min-w-[44px] px-3 rounded-full text-[13px] font-bold transition-colors ${currentStatus === k ? 'bg-white text-obsidian' : 'text-gray-400'}`}
-                        >
-                            {l}
-                        </button>
-                    ))}
-                </div>
-                <div className="mt-5 w-full grid grid-cols-5 gap-1 px-1">
-                    <ActionButton href={callNum ? `tel:${digits(callNum)}` : null} icon={Phone} label="call" />
-                    <ActionButton href={callNum ? `sms:${digits(callNum)}` : null} icon={MessageSquare} label="text" />
-                    <ActionButton href={emailAddr ? `mailto:${emailAddr}` : null} icon={Mail} label="email" />
-                    <ActionButton href={mapsHref(fullAddress)} icon={Navigation} label="directions" external />
-                    <ActionButton href={webHref(officeRecord?.website)} icon={Globe} label="website" external />
-                </div>
-            </div>
-
-            {/* ── Floating Action Bar (Top) ── */}
-            <div className="hidden md:flex sticky top-20 z-30 items-center justify-between gap-2 bg-slate-dark/90 backdrop-blur-md rounded-pill p-1.5 sm:p-2 shadow-heavy border border-white/10">
-                <button
-                    onClick={() => navigate('/')}
-                    className="flex items-center gap-2 pl-3 pr-3 sm:pl-4 sm:pr-5 py-2.5 rounded-full text-base font-medium shrink-0 text-gray-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
-                >
-                    <ArrowLeft className="w-5 h-5" />
-                    <span className="hidden sm:inline">Dashboard</span>
-                </button>
-
-                {/* Top Status Indicator */}
-                <div className="pr-1 sm:pr-4 flex items-center gap-2 sm:gap-3 min-w-0">
-                    {canDelete() && (
-                        <button
-                            onClick={handleDeleteContact}
-                            className="w-10 h-10 rounded-full border border-red-500/40 text-red-400 hover:bg-red-500/15 transition-colors flex items-center justify-center cursor-pointer"
-                            title="Delete Contact"
-                        >
-                            <Trash2 className="w-4 h-4" />
-                        </button>
-                    )}
-                    <span className="text-xs font-bold text-gray-500 uppercase tracking-widest hidden sm:inline-block">Status</span>
-                    <div className="flex items-center gap-1 bg-obsidian rounded-pill p-1 border border-white/5">
-                        {[
-                            { key: 'a', label: 'A', activeClass: 'text-[#10B981] border-2 border-[#10B981] shadow-sm bg-obsidian', inactiveClass: 'text-gray-500 hover:text-white border-2 border-transparent' },
-                            { key: 'b', label: 'B', activeClass: 'text-[#22C55E] border-2 border-[#22C55E] shadow-sm bg-obsidian', inactiveClass: 'text-gray-500 hover:text-white border-2 border-transparent' },
-                            { key: 'c', label: 'C', activeClass: 'text-[#059669] border-2 border-[#059669] shadow-sm bg-obsidian', inactiveClass: 'text-gray-500 hover:text-white border-2 border-transparent' },
-                            { key: '', label: 'None', activeClass: 'bg-slate-dark text-white border-2 border-white/10 shadow-sm', inactiveClass: 'text-gray-500 hover:text-white border-2 border-transparent' },
-                        ].map((s) => {
-                            const isActive = currentStatus === s.key;
-                            return (
-                                <button
-                                    key={s.key}
-                                    onClick={() => setStatus(officeContacts.map((c) => c.id), s.key)}
-                                    className={`min-w-9 h-9 px-2.5 sm:h-10 sm:px-5 rounded-full sm:rounded-pill text-sm font-bold transition-all cursor-pointer flex items-center justify-center ${isActive ? s.activeClass : s.inactiveClass
-                                        }`}
-                                >
-                                    {s.label}
-                                </button>
-                            )
-                        })}
-                    </div>
-                </div>
-            </div>
-
-            {/* ── Hero Profile ── */}
-            <div className="hidden md:flex bg-slate-dark rounded-5xl p-5 sm:p-8 lg:p-10 shadow-card border border-white/5 relative overflow-hidden flex-col items-start gap-8">
-                <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
-                    <Building2 className="w-64 h-64 text-white" />
-                </div>
-
-                <div className="w-full relative z-10 flex flex-col md:flex-row gap-6 items-start md:items-center justify-between">
-                    <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-                        {/* Avatar / Favicon */}
-                        <div className="w-24 h-24 rounded-full bg-obsidian border-4 border-slate-dark shadow-heavy flex items-center justify-center flex-shrink-0 overflow-hidden">
-                            {faviconUrl ? (
-                                <img src={faviconUrl} alt="Favicon" className="w-12 h-12 object-contain" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'flex'; }} />
-                            ) : null}
-                            <div className={`w-full h-full flex items-center justify-center ${faviconUrl ? 'hidden' : ''}`}>
-                                <Building2 className="w-8 h-8 text-gray-500" />
-                            </div>
-                        </div>
-
-                        <div className="flex-1">
-                            <h1 className="text-4xl lg:text-5xl font-bold text-white mb-2 tracking-tight">{officeRecord?.officeName || 'Unnamed Office'}</h1>
-                            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 text-[15px] text-gray-400 font-medium tracking-wide">
-                                {officeRecord?.city && <span className="flex items-center gap-1.5"><MapPin className="w-5 h-5 text-gray-500" /> {officeRecord.city}{officeRecord.state ? `, ${officeRecord.state}` : ''}</span>}
-                                {officeRecord?.email && (
-                                    <a href={`mailto:${officeRecord.email}`} className="flex items-center gap-1.5 hover:text-neon-yellow transition-colors">
-                                        <Mail className="w-5 h-5 text-gray-500" /> Email
-                                    </a>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
-                    {officeRecord?.phone1 && /\d{7,}/.test(officeRecord.phone1.replace(/\D/g, '')) && (
-                        <a
-                            href={`tel:${officeRecord.phone1.replace(/[^\d+]/g, '')}`}
-                            className="flex-shrink-0 bg-emerald/15 hover:bg-emerald/25 text-emerald px-6 py-3 rounded-pill text-sm font-bold flex items-center gap-2 transition-all border border-emerald/40"
-                        >
-                            <Phone className="w-4 h-4" /> Call {officeRecord.phone1}
-                        </a>
-                    )}
-                    {/* Add Contact Button */}
-                    <button
-                        onClick={handleCreateContact}
-                        disabled={isCreatingPerson}
-                        className="flex-shrink-0 bg-white/5 hover:bg-olive text-white hover:text-obsidian px-6 py-3 rounded-pill text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm border border-white/10 border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
-                    >
-                        <UserPlus className="w-4 h-4" />
-                        {isCreatingPerson ? 'Saving...' : 'Add Person to Office'}
+        <EditContext.Provider value={editMode}>
+        <div ref={rootRef} className={embedded ? 'min-h-full' : 'pb-12 animate-fade-in'}>
+            {/* ── Top bar ── */}
+            <div className={embedded
+                ? 'sticky top-0 z-20 h-12 px-4 lg:px-6 flex items-center gap-2 bg-obsidian/90 backdrop-blur-md border-b border-white/5'
+                : 'sticky top-14 z-30 -mx-3 -mt-4 px-1 h-11 flex items-center justify-between bg-obsidian/95 backdrop-blur-md border-b border-white/5'}>
+                {!embedded && (
+                    <button onClick={goBack} className="flex items-center h-10 pr-3 text-[16px] text-emerald active:opacity-60">
+                        <ChevronLeft className="w-6 h-6" strokeWidth={2.25} /> Contacts
                     </button>
-                    </div>
-                </div>
+                )}
+                {embedded && (
+                    <span className="mr-auto min-w-0 truncate text-[13px] text-gray-500">
+                        {editMode ? 'Editing. Click any field to change it.' : 'Up/Down arrows move through the list'}
+                    </span>
+                )}
+                <button
+                    onClick={() => setEditMode((v) => !v)}
+                    className={`h-9 px-4 rounded-full text-[15px] font-semibold cursor-pointer transition-colors ${editMode ? 'bg-emerald text-obsidian hover:bg-emerald/90' : 'text-emerald hover:bg-white/5'}`}
+                >
+                    {editMode ? 'Done' : 'Edit'}
+                </button>
             </div>
 
-            {/* ── Grid ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
-
-                {/* ── Phone: info card ── */}
-                <div className={`md:hidden order-1 bg-slate-dark rounded-2xl border border-white/5 overflow-hidden ${mobileEdit ? 'hidden' : ''}`}>
-                    <InfoRow label="phone" value={officeRecord?.phone1} href={isDialable(officeRecord?.phone1) ? `tel:${digits(officeRecord.phone1)}` : null} />
-                    <InfoRow label="phone 2" value={officeRecord?.phone2} href={isDialable(officeRecord?.phone2) ? `tel:${digits(officeRecord.phone2)}` : null} />
-                    <InfoRow label="email" value={officeRecord?.email} href={officeRecord?.email ? `mailto:${officeRecord.email}` : null} />
-                    <InfoRow label="address" value={fullAddress} href={mapsHref(fullAddress)} external />
-                    <InfoRow label="website" value={officeRecord?.website} href={webHref(officeRecord?.website)} external />
-                    <InfoRow label="mailing" value={officeRecord?.mailing} />
-                    <InfoRow label="who" value={officeRecord?.who} />
-                    {!officeRecord?.phone1 && !officeRecord?.phone2 && !officeRecord?.email && !fullAddress && !officeRecord?.website && (
-                        <p className="px-4 py-3 text-[15px] text-gray-500">No details yet. Tap Edit to add them.</p>
-                    )}
+            <div className={embedded ? 'max-w-[1040px] mx-auto px-6 lg:px-10 pt-8 pb-16' : 'pt-4'}>
+                {/* ── Card header ── */}
+                <div className="flex flex-col items-center text-center">
+                    <span className={`w-24 h-24 md:w-28 md:h-28 rounded-full flex items-center justify-center text-[34px] md:text-[38px] font-bold ${TIER_AVATAR[tier]}`}>
+                        {initialsFor(officeRecord)}
+                    </span>
+                    <h1 className="mt-3 px-4 text-[26px] md:text-[32px] font-bold leading-tight text-white tracking-tight break-words">
+                        {officeRecord?.officeName || 'Unnamed Office'}
+                    </h1>
+                    {heroSub && <p className="mt-1 px-4 text-[15px] text-gray-400">{heroSub}</p>}
+                    <div className="mt-3 inline-flex bg-white/[0.06] rounded-full p-1 gap-1" role="group" aria-label="Tier">
+                        {[['a', 'A'], ['b', 'B'], ['c', 'C'], ['', 'None']].map(([k, l]) => (
+                            <button
+                                key={l}
+                                onClick={() => setStatus(officeIds, k)}
+                                aria-pressed={currentStatus === k}
+                                className={`h-8 min-w-[44px] px-3 rounded-full text-[13px] font-bold transition-colors cursor-pointer ${currentStatus === k ? 'bg-white text-obsidian' : 'text-gray-400 hover:text-white'}`}
+                            >
+                                {l}
+                            </button>
+                        ))}
+                    </div>
+                    <div className="mt-5 w-full max-w-[440px] grid grid-cols-5 gap-1 px-1">
+                        <ActionButton href={callNum ? `tel:${digits(callNum)}` : null} icon={Phone} label="call" />
+                        <ActionButton href={callNum ? `sms:${digits(callNum)}` : null} icon={MessageSquare} label="text" />
+                        <ActionButton href={emailAddr ? `mailto:${emailAddr}` : null} icon={Mail} label="email" />
+                        <ActionButton href={mapsHref(fullAddress)} icon={Navigation} label="directions" external />
+                        <ActionButton href={webHref(officeRecord?.website)} icon={Globe} label="website" external />
+                    </div>
                 </div>
 
-                {/* ── Left Column ── */}
-                <div className="contents lg:block lg:col-span-2 lg:space-y-6">
-                    {/* Company Info */}
-                    <div className={`order-2 lg:order-none bg-slate-dark rounded-4xl p-5 sm:p-8 shadow-card border border-white/5 ${mobileEdit ? '' : 'hidden md:block'}`}>
-                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/5">
-                            <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
-                                <Building2 className="w-4 h-4 text-emerald" />
-                            </div>
-                            <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Company Details</h3>
-                        </div>
-                        <div className="grid grid-cols-1 gap-1">
-                            <EditableField label="Office Name" value={officeRecord?.officeName} onSave={(v) => updateOfficeFields({ officeName: v })} />
-                            <EditableField label="Street Address" value={officeRecord?.streetAddress} onSave={(v) => updateOfficeFields({ streetAddress: v })} />
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-6 gap-y-1">
+                <div className="mt-7 grid grid-cols-1 xl:grid-cols-2 gap-5 xl:items-start">
+                    <div className="space-y-5 min-w-0">
+                        {/* ── Details ── */}
+                        {editMode ? (
+                            <Section title="Company details">
+                                <EditableField label="Office name" value={officeRecord?.officeName} onSave={(v) => updateOfficeFields({ officeName: v })} />
+                                <EditableField label="Phone" value={officeRecord?.phone1} onSave={(v) => updateOfficeFields({ phone1: v })} />
+                                <EditableField label="Phone 2" value={officeRecord?.phone2} onSave={(v) => updateOfficeFields({ phone2: v })} />
+                                <EditableField label="Street address" value={officeRecord?.streetAddress} onSave={(v) => updateOfficeFields({ streetAddress: v })} />
                                 <EditableField label="City" value={officeRecord?.city} onSave={(v) => updateOfficeFields({ city: v })} />
                                 <EditableField label="State" value={officeRecord?.state} onSave={(v) => updateOfficeFields({ state: v })} />
                                 <EditableField label="Zip" value={officeRecord?.zip} onSave={(v) => updateOfficeFields({ zip: v })} />
-                            </div>
-                            <EditableField label="Website" value={officeRecord?.website} onSave={(v) => updateOfficeFields({ website: v })} />
-                            <EditableField label="Mailing" value={officeRecord?.mailing} onSave={(v) => updateOfficeFields({ mailing: v })} />
-                            <EditableField label="WHO" value={officeRecord?.who} onSave={(v) => updateOfficeFields({ who: v })} />
-                            <EditableField label="Phone 1" value={officeRecord?.phone1} onSave={(v) => updateOfficeFields({ phone1: v })} type="tel" />
-                            <EditableField label="Phone 2" value={officeRecord?.phone2} onSave={(v) => updateOfficeFields({ phone2: v })} type="tel" />
-                        </div>
-                    </div>
+                                <EditableField label="Website" value={officeRecord?.website} onSave={(v) => updateOfficeFields({ website: v })} />
+                                <EditableField label="Mailing" value={officeRecord?.mailing} onSave={(v) => updateOfficeFields({ mailing: v })} />
+                                <EditableField label="Who" value={officeRecord?.who} onSave={(v) => updateOfficeFields({ who: v })} />
+                            </Section>
+                        ) : (
+                            <Section title="Details">
+                                <InfoRow label="phone" value={officeRecord?.phone1} href={isDialable(officeRecord?.phone1) ? `tel:${digits(officeRecord.phone1)}` : null} />
+                                <InfoRow label="phone 2" value={officeRecord?.phone2} href={isDialable(officeRecord?.phone2) ? `tel:${digits(officeRecord.phone2)}` : null} />
+                                <InfoRow label="email" value={officeRecord?.email} href={officeRecord?.email ? `mailto:${officeRecord.email}` : null} />
+                                <InfoRow label="address" value={fullAddress} href={mapsHref(fullAddress)} external />
+                                <InfoRow label="website" value={officeRecord?.website} href={webHref(officeRecord?.website)} external />
+                                <InfoRow label="mailing" value={officeRecord?.mailing} />
+                                <InfoRow label="who" value={officeRecord?.who} />
+                                {!officeRecord?.phone1 && !officeRecord?.phone2 && !officeRecord?.email && !fullAddress && !officeRecord?.website && (
+                                    <button onClick={() => setEditMode(true)} className="w-full px-4 py-3 text-left text-[15px] text-gray-500 hover:text-white cursor-pointer">No details yet. Tap Edit to add them.</button>
+                                )}
+                            </Section>
+                        )}
 
-                    {/* Critical Note */}
-                    <div className={`order-4 lg:order-none bg-danger/10 border border-danger/20 rounded-4xl p-5 sm:p-6 shadow-inner relative group ${!officeRecord?.pinnedNote && !mobileEdit ? 'hidden md:block' : ''}`}>
-                        <div className="flex items-center gap-3 mb-4 pb-3 border-b border-danger/20">
-                            <div className="w-8 h-8 rounded-full bg-danger/20 flex items-center justify-center border border-danger/30">
-                                <Pin className="w-3.5 h-3.5 text-danger" />
-                            </div>
-                            <h3 className="text-[15px] font-bold text-danger uppercase tracking-widest">Critical Note</h3>
-                        </div>
-
-                        <div className="relative">
-                            {editingPinned ? (
-                                <div className="space-y-3">
-                                    <textarea
-                                        ref={pinnedRef}
-                                        value={pinnedDraft}
-                                        onChange={(e) => setPinnedDraft(e.target.value)}
-                                        className="w-full h-32 bg-obsidian/50 border border-danger/30 rounded-xl p-4 text-[15px] text-white outline-none focus:border-danger transition-colors resize-none leading-relaxed"
-                                        placeholder="Add an important critical note..."
-                                    />
-                                    <div className="flex justify-end gap-2">
-                                        <button onClick={() => { setPinnedDraft(officeRecord?.pinnedNote || ''); setEditingPinned(false); }} className="px-4 py-2 rounded-full text-sm font-medium hover:bg-white/5 text-gray-400 hover:text-white cursor-pointer transition-colors">Cancel</button>
-                                        <button onClick={savePinned} className="px-5 py-2 rounded-full text-sm font-bold bg-danger hover:bg-red-600 text-white transition-colors shadow-sm cursor-pointer">
-                                            Save Note
+                        {/* ── People ── */}
+                        <Section title="People in this office" right={<span className="text-[12px] text-gray-500">{people.length}</span>}>
+                            {people.map((person) => editMode ? (
+                                <div key={person.id} className="border-b border-white/10 last:border-0">
+                                    <EditableField label="Name" value={person.contactName} onSave={(v) => updateContact(person.id, { contactName: v })} />
+                                    <EditableField label="Email" value={person.email} onSave={(v) => updateContact(person.id, { email: v })} />
+                                    <EditableField label="Phone" value={person.phone1} onSave={(v) => updateContact(person.id, { phone1: v })} />
+                                </div>
+                            ) : (
+                                <div key={person.id} className="px-4 py-3 flex items-center gap-3 border-b border-white/[0.06] last:border-0">
+                                    <span className="shrink-0 w-9 h-9 rounded-full bg-white/10 text-gray-300 text-[13px] font-bold flex items-center justify-center">
+                                        {initialsFor({ officeName: person.contactName || '?' })}
+                                    </span>
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[15px] text-white truncate">{person.contactName || <span className="text-gray-500 italic">No name</span>}</p>
+                                        <div className="text-[13px] flex flex-wrap gap-x-3">
+                                            {person.email && <a href={`mailto:${person.email}`} className="text-emerald truncate max-w-full hover:underline">{person.email}</a>}
+                                            {person.phone1 && (isDialable(person.phone1)
+                                                ? <a href={`tel:${digits(person.phone1)}`} className="text-emerald hover:underline">{person.phone1}</a>
+                                                : <span className="text-gray-400">{person.phone1}</span>)}
+                                        </div>
+                                    </div>
+                                    {isDialable(person.phone1) && (
+                                        <a href={`tel:${digits(person.phone1)}`} aria-label={`Call ${person.contactName || ''}`} className="shrink-0 w-9 h-9 rounded-full bg-white/[0.08] hover:bg-white/[0.14] text-emerald flex items-center justify-center">
+                                            <Phone className="w-4 h-4" />
+                                        </a>
+                                    )}
+                                </div>
+                            ))}
+                            {addingPerson ? (
+                                <div className="p-4 space-y-2.5 bg-obsidian/40 border-t border-white/[0.06]">
+                                    <input type="text" value={newPersonData.name} onChange={(e) => setNewPersonData({ ...newPersonData, name: e.target.value })} className={smallInput} placeholder="Name" autoFocus />
+                                    <input type="email" value={newPersonData.email} onChange={(e) => setNewPersonData({ ...newPersonData, email: e.target.value })} className={smallInput} placeholder="Email" />
+                                    <input type="tel" value={newPersonData.phone1 || ''} onChange={(e) => setNewPersonData({ ...newPersonData, phone1: e.target.value })} className={smallInput} placeholder="Phone" />
+                                    <div className="flex justify-end gap-2 pt-1">
+                                        <button onClick={() => { setAddingPerson(false); setNewPersonData({ name: '', email: '', phone1: '' }); }} className="h-9 px-4 rounded-full text-[14px] text-gray-400 hover:text-white hover:bg-white/5 cursor-pointer">Cancel</button>
+                                        <button onClick={savePerson} disabled={!newPersonData.name.trim() || isCreatingPerson} className="h-9 px-4 rounded-full text-[14px] font-bold bg-emerald text-obsidian disabled:opacity-40 cursor-pointer">
+                                            {isCreatingPerson ? 'Saving…' : 'Add person'}
                                         </button>
                                     </div>
                                 </div>
                             ) : (
-                                <div className="group/note">
-                                    {officeRecord?.pinnedNote ? (
-                                        <p className="text-[15px] text-white leading-relaxed whitespace-pre-wrap pr-8">
-                                            {officeRecord.pinnedNote}
-                                        </p>
-                                    ) : (
-                                        <p className="text-[15px] text-danger/60 italic">No critical note attached.</p>
-                                    )}
-                                    <button
-                                        onClick={() => {
-                                            setPinnedDraft(officeRecord?.pinnedNote || '');
-                                            setEditingPinned(true);
-                                        }}
-                                        className="absolute right-0 top-0 p-2 rounded-full md:opacity-0 md:group-hover/note:opacity-100 hover:bg-danger/20 transition-all cursor-pointer"
-                                        title="Edit Critical Note"
-                                    >
-                                        <Pencil className="w-3.5 h-3.5 text-danger" />
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Comments section */}
-                    <div className="order-6 lg:order-none bg-slate-dark rounded-4xl shadow-card border border-white/5 flex flex-col max-h-[520px] md:max-h-none md:h-[600px]">
-                        <div className="p-6 border-b border-white/5">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
-                                    <Activity className="w-4 h-4 text-emerald" />
-                                </div>
-                                <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Comments</h3>
-                                <span className="ml-auto bg-obsidian text-emerald text-xs font-bold px-3 py-1.5 rounded-full border border-white/5 shadow-inner">
-                                    {officeRecord?.notes?.length || 0}
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* Comment Input */}
-                        <div className="p-6 bg-obsidian/20 border-b border-white/5 flex flex-col gap-3">
-                            <textarea
-                                value={commentText}
-                                onChange={(e) => setCommentText(e.target.value)}
-                                onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmitComment(); } }}
-                                placeholder="Log a new comment..."
-                                rows={2}
-                                className="w-full bg-obsidian border border-white/10 rounded-2xl px-4 py-3 text-base text-white placeholder:text-gray-600 resize-none outline-none focus:border-olive transition-colors scrollbar-hide shadow-inner"
-                            />
-                            <div className="flex items-center justify-between">
-                                <span className="hidden md:inline text-xs font-mono text-gray-600">⌘+Enter to save</span>
-                                <button
-                                    onClick={handleSubmitComment}
-                                    disabled={!commentText.trim()}
-                                    className="flex items-center gap-2 px-5 py-2.5 rounded-full bg-olive hover:bg-lime text-obsidian text-sm font-bold disabled:opacity-20 disabled:cursor-not-allowed transition-all cursor-pointer shadow-sm"
-                                >
-                                    <Send className="w-4 h-4" />
-                                    Post
+                                <button onClick={() => setAddingPerson(true)} className="w-full px-4 py-3 flex items-center gap-2 text-[15px] text-emerald hover:bg-white/[0.03] border-t border-white/[0.06] cursor-pointer">
+                                    <UserPlus className="w-4 h-4" /> Add person to this office
                                 </button>
-                            </div>
-                        </div>
-
-                        {/* List */}
-                        <div className="flex-1 overflow-auto p-4 space-y-3 custom-scrollbar">
-                            {!officeRecord?.notes?.length ? (
-                                <div className="h-full flex flex-col items-center justify-center text-center px-4">
-                                    <MoreHorizontal className="w-8 h-8 text-gray-700 mb-3" />
-                                    <p className="text-gray-500 text-[15px]">No comments yet. Log activity above.</p>
-                                </div>
-                            ) : (
-                                officeRecord.notes.map((note) => (
-                                    <div key={note.id} className="bg-obsidian/50 border border-white/5 rounded-3xl p-5 hover:border-white/10 transition-colors">
-                                        <p className="text-[15px] text-gray-300 leading-relaxed whitespace-pre-wrap">{note.text}</p>
-                                        <p className="text-xs font-medium text-gray-500 mt-3 flex justify-end gap-2">
-                                            {note.author && <span>{note.author.split('@')[0]} ·</span>}
-                                            {relativeDate(note.timestamp)}
-                                        </p>
-                                    </div>
-                                ))
                             )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* ── Right Column ── */}
-                <div className="contents lg:block lg:space-y-6">
-
-                    {/* Contacts */}
-                    <div className="order-3 lg:order-none bg-slate-dark rounded-4xl p-5 sm:p-8 shadow-card border border-white/5 relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-olive/5 rounded-bl-full pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity"></div>
-                        <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5 relative z-10">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
-                                    <User className="w-4 h-4 text-emerald" />
-                                </div>
-                                <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Contacts</h3>
-                            </div>
-                        </div>
-
-                        <div className="mb-6 relative z-10 space-y-4">
-                            <h4 className="text-xs font-bold text-emerald uppercase tracking-widest">People in This Office</h4>
-                            {officeContacts
-                                .slice()
-                                .sort((a, b) => (a.contactName || '').localeCompare(b.contactName || '') || a.id - b.id)
-                                .map((person) => (
-                                    <div key={person.id} className="rounded-2xl border border-white/10 bg-obsidian/50 p-4">
-                                        <div className="grid grid-cols-1 gap-1">
-                                            <EditableField label="Contact Name" value={person.contactName} onSave={(v) => updateContact(person.id, { contactName: v })} />
-                                            <EditableField label="Email Address" value={person.email} onSave={(v) => updateContact(person.id, { email: v })} />
-                                            <EditableField label="Phone" value={person.phone1} onSave={(v) => updateContact(person.id, { phone1: v })} />
-                                        </div>
-                                    </div>
-                                ))}
-                        </div>
-                        {/* Add Person Form */}
-                        <div className="border-t border-white/5 pt-6 relative z-10">
-                            {!addingPerson ? (
-                                <button onClick={() => setAddingPerson(true)} className="flex items-center gap-2 text-sm font-bold text-emerald hover:text-emerald/80 transition-colors uppercase tracking-widest cursor-pointer w-full py-2 justify-center rounded-xl bg-emerald/10 hover:bg-emerald/20 border border-emerald/20">
-                                    <UserPlus className="w-4 h-4" /> Add Person to Office
-                                </button>
-                            ) : (
-                                <div className="bg-obsidian rounded-2xl p-4 border border-emerald/20 shadow-inner">
-                                    <h4 className="text-sm font-bold text-white mb-4">New Colleague</h4>
-                                    <div className="space-y-3 mb-4">
-                                        <div>
-                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">Name</label>
-                                            <input type="text" value={newPersonData.name} onChange={e => setNewPersonData({ ...newPersonData, name: e.target.value })} className="w-full bg-slate-dark border border-white/10 rounded-xl px-4 py-2 text-[15px] text-white outline-none focus:border-emerald transition-colors" placeholder="e.g. Jane Doe" autoFocus />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">Email</label>
-                                            <input type="email" value={newPersonData.email} onChange={e => setNewPersonData({ ...newPersonData, email: e.target.value })} className="w-full bg-slate-dark border border-white/10 rounded-xl px-4 py-2 text-[15px] text-white outline-none focus:border-emerald transition-colors" placeholder="jane@example.com" />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">Phone</label>
-                                            <input type="tel" value={newPersonData.phone1 || ''} onChange={e => setNewPersonData({ ...newPersonData, phone1: e.target.value })} className="w-full bg-slate-dark border border-white/10 rounded-xl px-4 py-2 text-[15px] text-white outline-none focus:border-emerald transition-colors" placeholder="(555) 123-4567" />
-                                        </div>
-                                    </div>
-                                    <div className="flex justify-end gap-2">
-                                        <button onClick={() => { setAddingPerson(false); setNewPersonData({ name: '', email: '', phone1: '' }); }} className="px-4 py-2 rounded-pill text-sm font-medium hover:bg-white/5 text-gray-400 hover:text-white cursor-pointer transition-colors">Cancel</button>
-                                        <button onClick={async () => {
-                                            if (!newPersonData.name.trim() || isCreatingPerson) return;
-                                            setIsCreatingPerson(true);
-                                            try {
-                                                const newId = await addContact({
-                                                    ...officeRecord,
-                                                    contactName: newPersonData.name.trim(),
-                                                    email: newPersonData.email.trim(),
-                                                    phone1: newPersonData.phone1?.trim() || '',
-                                                    phone2: '',
-                                                });
-                                                if (!newId) return;
-                                                setAddingPerson(false);
-                                                setNewPersonData({ name: '', email: '', phone1: '' });
-                                            } finally {
-                                                setIsCreatingPerson(false);
-                                            }
-                                        }} className="px-5 py-2 rounded-pill text-sm font-bold bg-emerald hover:bg-emerald/90 text-obsidian transition-colors shadow-sm cursor-pointer disabled:opacity-50" disabled={!newPersonData.name.trim() || isCreatingPerson}>{isCreatingPerson ? 'Saving...' : 'Save Colleague'}</button>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
+                        </Section>
                     </div>
 
-                    {/* Specialties */}
-                    <div className="order-5 lg:order-none bg-slate-dark rounded-4xl p-5 sm:p-8 shadow-card border border-white/5">
-                        <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/5">
-                            <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
-                                <Tag className="w-4 h-4 text-emerald" />
-                            </div>
-                            <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Specialties</h3>
-                        </div>
-
-                        <div className="flex flex-wrap gap-2 mb-6">
-                            {(officeRecord?.specialties || []).map(s => (
-                                <div key={s} className="flex items-center gap-1.5 px-3 py-1.5 bg-obsidian border border-white/10 rounded-pill text-sm font-medium text-white shadow-sm">
-                                    {s}
-                                    <button
-                                        onClick={() => removeSpecialty(officeContacts.map((c) => c.id), s)}
-                                        className="text-gray-500 hover:text-danger hover:bg-white/5 rounded-full p-0.5 transition-colors cursor-pointer"
-                                    >
-                                        <X className="w-3.5 h-3.5" />
+                    <div className="space-y-5 min-w-0">
+                        {/* ── Critical note ── */}
+                        {(officeRecord?.pinnedNote || editMode || editingPinned) && (
+                            <Section
+                                title="Critical note"
+                                tone="danger"
+                                right={!editingPinned && (
+                                    <button onClick={() => { setPinnedDraft(officeRecord?.pinnedNote || ''); setEditingPinned(true); }} className="text-[13px] font-semibold text-danger/90 hover:text-danger cursor-pointer">
+                                        {officeRecord?.pinnedNote ? 'Edit' : 'Add'}
                                     </button>
-                                </div>
-                            ))}
-                            {(!officeRecord?.specialties || officeRecord.specialties.length === 0) && (
-                                <span className="text-gray-500 text-[15px] italic">No specialties added yet.</span>
-                            )}
-                        </div>
-
-                        <div className="relative flex items-center gap-2">
-                            <input
-                                list="specialties-list"
-                                type="text"
-                                value={newSpecialty}
-                                onChange={(e) => setNewSpecialty(e.target.value)}
-                                onKeyDown={(e) => {
-                                    if (e.key === 'Enter' && newSpecialty.trim()) {
-                                        e.preventDefault();
-                                        addSpecialty(officeContacts.map((c) => c.id), newSpecialty.trim());
-                                        setNewSpecialty('');
-                                    }
-                                }}
-                                placeholder="Add a specialty... (e.g. Pain Dr)"
-                                className="flex-1 bg-obsidian border border-white/10 rounded-pill px-5 py-3 text-[15px] text-white placeholder-gray-500 outline-none focus:border-emerald/50 transition-colors"
-                            />
-                            <datalist id="specialties-list">
-                                {allSpecialties.map(s => <option key={s} value={s} />)}
-                            </datalist>
-                            <button
-                                onClick={() => {
-                                    if (newSpecialty.trim()) {
-                                        addSpecialty(officeContacts.map((c) => c.id), newSpecialty.trim());
-                                        setNewSpecialty('');
-                                    }
-                                }}
-                                disabled={!newSpecialty.trim()}
-                                className="w-12 h-12 flex items-center justify-center rounded-full bg-slate-dark text-white hover:bg-emerald hover:text-obsidian disabled:opacity-30 disabled:hover:bg-slate-dark disabled:hover:text-white transition-all cursor-pointer shadow-sm border border-white/10 border-transparent flex-shrink-0"
+                                )}
                             >
-                                <Plus className="w-5 h-5" />
-                            </button>
-                        </div>
+                                {editingPinned ? (
+                                    <div className="p-3 space-y-2">
+                                        <textarea
+                                            ref={pinnedRef}
+                                            value={pinnedDraft}
+                                            onChange={(e) => setPinnedDraft(e.target.value)}
+                                            rows={4}
+                                            className="w-full bg-obsidian/60 border border-danger/30 rounded-xl p-3 text-[16px] md:text-[15px] text-white outline-none focus:border-danger resize-none leading-relaxed"
+                                            placeholder="Something everyone must know before contacting this office"
+                                        />
+                                        <div className="flex justify-end gap-2">
+                                            <button onClick={() => { setPinnedDraft(officeRecord?.pinnedNote || ''); setEditingPinned(false); }} className="h-9 px-4 rounded-full text-[14px] text-gray-400 hover:text-white hover:bg-white/5 cursor-pointer">Cancel</button>
+                                            <button onClick={savePinned} className="h-9 px-4 rounded-full text-[14px] font-bold bg-danger text-white hover:bg-red-600 cursor-pointer">Save note</button>
+                                        </div>
+                                    </div>
+                                ) : officeRecord?.pinnedNote ? (
+                                    <p className="px-4 py-3 text-[15px] text-white leading-relaxed whitespace-pre-wrap">{officeRecord.pinnedNote}</p>
+                                ) : (
+                                    <p className="px-4 py-3 text-[15px] text-danger/60 italic">No critical note.</p>
+                                )}
+                            </Section>
+                        )}
+
+                        {/* ── Specialties ── */}
+                        <Section
+                            title="Specialties"
+                            right={!editMode && (
+                                <button onClick={() => setEditMode(true)} className="text-[13px] font-semibold text-emerald hover:underline cursor-pointer">Add</button>
+                            )}
+                        >
+                            <div className="p-3 flex flex-wrap gap-2">
+                                {(officeRecord?.specialties || []).map((sp) => (
+                                    <span key={sp} className="inline-flex items-center gap-1 h-8 pl-3 pr-2 rounded-full bg-white/[0.06] border border-white/10 text-[14px] text-white">
+                                        {sp}
+                                        {editMode && (
+                                            <button onClick={() => removeSpecialty(officeIds, sp)} aria-label={`Remove ${sp}`} className="w-5 h-5 rounded-full text-gray-400 hover:text-danger hover:bg-white/5 flex items-center justify-center cursor-pointer">
+                                                <X className="w-3.5 h-3.5" />
+                                            </button>
+                                        )}
+                                    </span>
+                                ))}
+                                {!officeRecord?.specialties?.length && <span className="px-1 py-1 text-[15px] text-gray-500">None yet.</span>}
+                            </div>
+                            {editMode && (
+                                <div className="px-3 pb-3 flex items-center gap-2">
+                                    <input
+                                        list="specialties-list"
+                                        type="text"
+                                        value={newSpecialty}
+                                        onChange={(e) => setNewSpecialty(e.target.value)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSpecialtyNow(); } }}
+                                        placeholder="Add a specialty (e.g. Pain Dr)"
+                                        className={`${smallInput} flex-1`}
+                                    />
+                                    <datalist id="specialties-list">
+                                        {allSpecialties.map((sp) => <option key={sp} value={sp} />)}
+                                    </datalist>
+                                    <button onClick={addSpecialtyNow} disabled={!newSpecialty.trim()} aria-label="Add specialty" className="w-10 h-10 shrink-0 rounded-full bg-emerald text-obsidian disabled:opacity-30 flex items-center justify-center cursor-pointer">
+                                        <Plus className="w-5 h-5" strokeWidth={2.5} />
+                                    </button>
+                                </div>
+                            )}
+                        </Section>
+
+                        {/* ── Comments ── */}
+                        <Section title="Comments" right={<span className="text-[12px] text-gray-500">{notes.length}</span>}>
+                            <div className="p-3 border-b border-white/[0.06]">
+                                <textarea
+                                    value={commentText}
+                                    onChange={(e) => setCommentText(e.target.value)}
+                                    onKeyDown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); handleSubmitComment(); } }}
+                                    placeholder="Log a call, visit or referral…"
+                                    rows={2}
+                                    className="w-full bg-obsidian border border-white/10 rounded-xl px-3 py-2.5 text-[16px] md:text-[15px] text-white placeholder:text-gray-600 resize-none outline-none focus:border-emerald/60 transition-colors"
+                                />
+                                <div className="mt-2 flex items-center justify-between">
+                                    <span className="hidden md:inline text-[12px] text-gray-600">⌘/Ctrl + Enter to post</span>
+                                    <button
+                                        onClick={handleSubmitComment}
+                                        disabled={!commentText.trim()}
+                                        className="ml-auto h-9 px-4 rounded-full bg-emerald text-obsidian text-[14px] font-bold flex items-center gap-1.5 disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
+                                    >
+                                        <Send className="w-4 h-4" /> Post
+                                    </button>
+                                </div>
+                            </div>
+                            {notes.length === 0 ? (
+                                <p className="px-4 py-4 text-[15px] text-gray-500">No comments yet.</p>
+                            ) : (
+                                <>
+                                    {visibleNotes.map((note) => (
+                                        <div key={note.id} className="px-4 py-3 border-b border-white/[0.06] last:border-0">
+                                            <p className="text-[15px] text-gray-200 leading-relaxed whitespace-pre-wrap break-words">{note.text}</p>
+                                            <p className="mt-1 text-[12px] text-gray-500">
+                                                {note.author && <>{note.author.split('@')[0]} · </>}{relativeDate(note.timestamp)}
+                                            </p>
+                                        </div>
+                                    ))}
+                                    {notes.length > 5 && (
+                                        <button onClick={() => setShowAllNotes((v) => !v)} className="w-full px-4 py-2.5 text-[14px] font-semibold text-emerald hover:bg-white/[0.03] cursor-pointer">
+                                            {showAllNotes ? 'Show fewer' : `Show all ${notes.length}`}
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                        </Section>
                     </div>
                 </div>
 
-                {/* ── Phone: delete (Edit mode only, admins) ── */}
-                {mobileEdit && canDelete() && (
+                {/* ── Delete (Edit mode, admins) ── */}
+                {editMode && canDelete() && (
                     <button
                         onClick={handleDeleteContact}
-                        className="md:hidden order-7 w-full h-12 rounded-2xl bg-slate-dark border border-white/5 text-[16px] font-semibold text-danger active:bg-white/5"
+                        className="mt-8 w-full xl:w-auto xl:px-8 xl:mx-auto xl:flex h-12 rounded-2xl bg-slate-dark border border-white/5 text-[16px] font-semibold text-danger hover:bg-danger/10 items-center justify-center cursor-pointer"
                     >
-                        Delete Contact
+                        Delete this contact
                     </button>
                 )}
             </div>
         </div>
-        </MobileEditContext.Provider>
+        </EditContext.Provider>
     );
 }

@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
-import { Routes, Route, Navigate, Link } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useLocation } from 'react-router-dom';
 import { Dashboard } from './pages/Dashboard.jsx';
-import { ContactDetail } from './pages/ContactDetail.jsx';
 import { Login } from './pages/Login.jsx';
 import { UserManagement } from './pages/UserManagement.jsx';
 import { useStore } from './store.js';
 import { Toast } from './components/Toast.jsx';
 
 export default function App() {
+    const location = useLocation();
+    const isWorkspace = location.pathname === '/' || location.pathname.startsWith('/contact/');
     const initializeAuth = useStore((s) => s.initializeAuth);
     const onAuthStateChange = useStore((s) => s.onAuthStateChange);
     const loadCurrentUserRole = useStore((s) => s.loadCurrentUserRole);
@@ -157,7 +158,7 @@ export default function App() {
     return (
         <div className="min-h-screen bg-obsidian text-white selection:bg-lime selection:text-obsidian">
             <header className="bg-slate-dark border-b border-white/5 sticky top-0 z-40">
-                <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+                <div className="px-4 sm:px-6 h-14 flex items-center justify-between">
                     <div className="flex items-center gap-2 sm:gap-4 min-w-0">
                         <Link to="/" className="text-sm font-bold tracking-widest uppercase text-white whitespace-nowrap">
                             SLF Rolodex
@@ -184,10 +185,10 @@ export default function App() {
                 </div>
             </header>
 
-            <main className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
+            <main className={isWorkspace ? 'px-3 pt-4 pb-8 md:p-0' : 'max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8'}>
                 <Routes>
                     <Route path="/" element={<Dashboard />} />
-                    <Route path="/contact/:id" element={<ContactDetail />} />
+                    <Route path="/contact/:id" element={<Dashboard />} />
                     <Route
                         path="/users"
                         element={canManageUsers() ? <UserManagement /> : <Navigate to="/" replace />}
