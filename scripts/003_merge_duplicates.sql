@@ -1,15 +1,13 @@
 -- SLF Rolodex: merge duplicate contacts (same person entered twice)
 -- REBUILT FROM THE LIVE DATABASE (live ids differ from the repo's data.js ids; the first version of this
 -- file used repo ids and would have merged the wrong people -- do not use older copies).
--- 56 groups, 60 rows removed. Every group was reviewed by hand.
+-- 65 groups, 70 rows removed. Every group was reviewed by hand.
 -- SAFETY GUARD: each id carries an expected name fragment. If any row in a group does not contain that
 -- fragment in contact_name/office_name (id drift, already merged, edited), the WHOLE group is skipped.
 -- Run AFTER 002_cleanup_and_integrity.sql and AFTER exporting a backup of contacts. Idempotent.
 -- Reversible: removed rows are copied to public.contacts_merge_archive (with merged_into) before deletion.
--- NOT merged (needs a human): Advocate Capital (A vs C tier), The Function (2 locations), Latch (David vs Daniel),
--- Richardson (3 addresses), Keystone Rayman, Da-Ren Chen, Schreiber, Feinberg, Ali Reza Bamdad (1188),
--- Elk Grove Natural Health (26/390, different address), Serpa (422/427), Integrity (500/508),
--- Franceschi (856/874), Stevens Creek Levine (967/983), San Leandro Macchesney (1056/1058).
+-- NOT merged: Latch (David and Daniel are different people), Ali Reza Bamdad (different doctor from Alex),
+-- and 4 pairs awaiting an owner decision: Keystone (789/792), Da-Ren Chen (451/1018), Schreiber (601/639), Feinberg (1109/1120).
 -- Test rows 1341/1342 ("Andres test") should simply be deleted from the app.
 -- Survivor per group: has a tier > most complete record > lowest id. A group with conflicting tiers is skipped.
 
@@ -138,7 +136,31 @@ insert into merge_groups values
     (55,1216,'petersen'),
     (55,1217,'petersen'),
     (56,1280,'bergman'),
-    (56,1292,'bergman');
+    (56,1292,'bergman'),
+    (57,1,'advocate'),
+    (57,79,'advocate'),
+    (58,221,'function'),
+    (58,222,'function'),
+    (59,699,'richardson'),
+    (59,705,'richardson'),
+    (59,706,'richardson'),
+    (60,26,'james'),
+    (60,390,'james'),
+    (61,422,'serpa'),
+    (61,427,'serpa'),
+    (62,500,'myers'),
+    (62,508,'myers'),
+    (63,856,'franceschi'),
+    (63,874,'franceschi'),
+    (64,967,'levine'),
+    (64,983,'levine'),
+    (65,1056,'macchesn'),
+    (65,1058,'macchesn');
+
+-- Owner decision: Advocate Capital keeps tier A (drop the stray C on the duplicate before merging).
+update public.contacts set c = false
+where id = 79 and c and not a and lower(office_name) like 'advocate capital%'
+  and exists (select 1 from public.contacts where id = 1 and a and lower(office_name) like 'advocate capital%');
 
 -- Only rows that still exist; skip groups with fewer than 2 rows left or conflicting tiers.
 create temp table ranked on commit drop as
