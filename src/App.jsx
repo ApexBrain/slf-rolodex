@@ -158,24 +158,25 @@ export default function App() {
         <div className="min-h-screen bg-obsidian text-white selection:bg-lime selection:text-obsidian">
             <header className="bg-slate-dark border-b border-white/5 sticky top-0 z-40">
                 <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
-                    <div className="flex items-center gap-4">
-                        <Link to="/" className="text-sm font-bold tracking-widest uppercase text-white">
+                    <div className="flex items-center gap-2 sm:gap-4 min-w-0">
+                        <Link to="/" className="text-sm font-bold tracking-widest uppercase text-white whitespace-nowrap">
                             SLF Rolodex
                         </Link>
                         {canManageUsers() && (
                             <Link
                                 to="/users"
-                                className="text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-gray-200 transition-colors"
+                                className="text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 text-gray-200 transition-colors whitespace-nowrap"
                             >
-                                User Management
+                                <span className="sm:hidden">Users</span><span className="hidden sm:inline">User Management</span>
                             </Link>
                         )}
                     </div>
-                    <div className="flex items-center gap-3">
-                        <span className="text-xs text-gray-400">{user?.email} ({role})</span>
+                    <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                        <span className="hidden md:inline text-xs text-gray-400">{user?.email} ({role})</span>
                         <button
                             onClick={signOut}
-                            className="text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors"
+                            className="text-xs px-3 py-1.5 rounded-full bg-white/5 hover:bg-white/10 transition-colors whitespace-nowrap"
+                            title={`${user?.email || ''} (${role})`}
                         >
                             Sign Out
                         </button>
@@ -183,7 +184,7 @@ export default function App() {
                 </div>
             </header>
 
-            <main className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8 py-8">
+            <main className="max-w-[1400px] mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-8">
                 <Routes>
                     <Route path="/" element={<Dashboard />} />
                     <Route path="/contact/:id" element={<ContactDetail />} />

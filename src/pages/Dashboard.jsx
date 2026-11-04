@@ -150,11 +150,11 @@ export function Dashboard() {
             {/* ── Page Header & Filters ── */}
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 bg-slate-dark/50 backdrop-blur-md rounded-3xl p-3 border border-white/5 shadow-card">
                 {/* Logo */}
-                <div className="md:border-r border-white/10 md:pr-4 py-2 self-center">
+                <div className="md:border-r border-white/10 md:pr-4 py-1 md:py-2 self-center">
                     <img
                         src="/SLF_Black_Book_Logo.png"
                         alt="SLF Rolodex"
-                        className="w-[250px] object-contain"
+                        className="w-[160px] md:w-[250px] object-contain"
                     />
                 </div>
 
@@ -168,7 +168,7 @@ export function Dashboard() {
                             <input
                                 type="text"
                                 ref={searchRef}
-                                placeholder="Search name, city, phone, specialty...   ( / )"
+                                placeholder={typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches ? 'Search name, city, phone, specialty...   ( / )' : 'Search name, city, phone, specialty...'}
                                 value={searchQuery}
                                 onChange={(e) => setSearch(e.target.value)}
                                 onKeyDown={(e) => {
@@ -289,7 +289,7 @@ export function Dashboard() {
             {/* ── Contact List ── */}
             <div className="bg-slate-dark rounded-4xl shadow-card border border-white/5 overflow-hidden">
                 {/* Table header */}
-                <div className="grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 bg-white/5 border-b border-white/5 text-[13px] font-bold text-gray-400 uppercase tracking-widest">
+                <div className="hidden md:grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 bg-white/5 border-b border-white/5 text-[13px] font-bold text-gray-400 uppercase tracking-widest">
                     <span>Business Name</span>
                     <span>Contact</span>
                     <span>City</span>
@@ -300,50 +300,95 @@ export function Dashboard() {
 
                 {/* Rows */}
                 <div className="divide-y divide-white/5">
-                    {pageData.map((contact) => (
+                    {pageData.map((contact) => {
+                        const callable = contact.phone1 && /\d{7,}/.test(contact.phone1.replace(/\D/g, ''));
+                        const tel = callable ? `tel:${contact.phone1.replace(/[^\d+]/g, '')}` : null;
+                        const open = () => navigate(`/contact/${contact.id}`);
+                        return (
                         <div
                             key={contact.id}
                             role="link"
                             tabIndex={0}
-                            onClick={() => navigate(`/contact/${contact.id}`)}
-                            onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/contact/${contact.id}`); }}
-                            className="w-full grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-5 text-left hover:bg-white/5 transition-colors cursor-pointer group items-center"
+                            onClick={open}
+                            onKeyDown={(e) => { if (e.key === 'Enter') open(); }}
+                            className="cursor-pointer group hover:bg-white/5 active:bg-white/5 transition-colors"
                         >
-                            <span className="text-base font-medium text-white truncate group-hover:text-emerald transition-colors">
-                                {contact.officeName || <span className="text-gray-500 italic">Unnamed</span>}
-                            </span>
-                            <span className="text-[15px] text-gray-400 truncate group-hover:text-gray-200 transition-colors">
-                                {contact.contactName || '—'}
-                            </span>
-                            <span className="text-[15px] text-gray-500 truncate">{contact.city || '—'}</span>
-                            <div className="flex flex-wrap gap-1">
-                                {contact.specialties?.length > 0 ? (
-                                    contact.specialties.map(s => (
-                                        <span key={s} className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[12px] text-gray-300 truncate max-w-[120px]" title={s}>
-                                            {s}
-                                        </span>
-                                    ))
-                                ) : (
-                                    <span className="text-[15px] text-gray-600">—</span>
+                            {/* Mobile card */}
+                            <div className="md:hidden px-4 py-4">
+                                <div className="flex items-start gap-3">
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-[16px] font-semibold text-white leading-snug line-clamp-2 break-words">
+                                            {contact.officeName || <span className="text-gray-500 italic">Unnamed</span>}
+                                        </p>
+                                        <p className="mt-0.5 text-[14px] text-gray-400 truncate">
+                                            {[contact.contactName, contact.city].filter(Boolean).join(' · ') || '—'}
+                                        </p>
+                                    </div>
+                                    <div className="shrink-0 pt-0.5"><StatusBadge contact={contact} /></div>
+                                </div>
+                                {(contact.specialties?.length > 0 || contact.phone1) && (
+                                    <div className="mt-3 flex items-center gap-2">
+                                        <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
+                                            {(contact.specialties || []).slice(0, 3).map(s => (
+                                                <span key={s} className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[12px] text-gray-300 truncate max-w-[140px]">{s}</span>
+                                            ))}
+                                            {contact.specialties?.length > 3 && (
+                                                <span className="px-2 py-0.5 text-[12px] text-gray-500">+{contact.specialties.length - 3}</span>
+                                            )}
+                                        </div>
+                                        {tel && (
+                                            <a
+                                                href={tel}
+                                                onClick={(e) => e.stopPropagation()}
+                                                className="shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-pill bg-emerald/10 border border-emerald/30 text-emerald text-[14px] font-semibold"
+                                                aria-label={`Call ${contact.officeName || contact.contactName || ''}`}
+                                            >
+                                                <Phone className="w-4 h-4" />{contact.phone1}
+                                            </a>
+                                        )}
+                                    </div>
                                 )}
                             </div>
-                            {contact.phone1 && /\d{7,}/.test(contact.phone1.replace(/\D/g, '')) ? (
-                                <a
-                                    href={`tel:${contact.phone1.replace(/[^\d+]/g, '')}`}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="inline-flex items-center gap-1.5 text-[15px] text-gray-400 font-medium truncate hover:text-emerald transition-colors"
-                                    title="Call"
-                                >
-                                    <Phone className="w-3.5 h-3.5 shrink-0" />{contact.phone1}
-                                </a>
-                            ) : (
-                                <span className="text-[15px] text-gray-500 font-medium truncate">{contact.phone1 || '—'}</span>
-                            )}
-                            <div className="flex justify-center items-center">
-                                <StatusBadge contact={contact} />
+
+                            {/* Desktop row */}
+                            <div className="hidden md:grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-5 text-left items-center">
+                                <span className="text-base font-medium text-white truncate group-hover:text-emerald transition-colors">
+                                    {contact.officeName || <span className="text-gray-500 italic">Unnamed</span>}
+                                </span>
+                                <span className="text-[15px] text-gray-400 truncate group-hover:text-gray-200 transition-colors">
+                                    {contact.contactName || '—'}
+                                </span>
+                                <span className="text-[15px] text-gray-500 truncate">{contact.city || '—'}</span>
+                                <div className="flex flex-wrap gap-1">
+                                    {contact.specialties?.length > 0 ? (
+                                        contact.specialties.map(s => (
+                                            <span key={s} className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[12px] text-gray-300 truncate max-w-[120px]" title={s}>
+                                                {s}
+                                            </span>
+                                        ))
+                                    ) : (
+                                        <span className="text-[15px] text-gray-600">—</span>
+                                    )}
+                                </div>
+                                {tel ? (
+                                    <a
+                                        href={tel}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="inline-flex items-center gap-1.5 text-[15px] text-gray-400 font-medium truncate hover:text-emerald transition-colors"
+                                        title="Call"
+                                    >
+                                        <Phone className="w-3.5 h-3.5 shrink-0" />{contact.phone1}
+                                    </a>
+                                ) : (
+                                    <span className="text-[15px] text-gray-500 font-medium truncate">{contact.phone1 || '—'}</span>
+                                )}
+                                <div className="flex justify-center items-center">
+                                    <StatusBadge contact={contact} />
+                                </div>
                             </div>
                         </div>
-                    ))}
+                        );
+                    })}
 
                     {pageData.length === 0 && (
                         <div className="px-6 py-20 text-center flex flex-col items-center">

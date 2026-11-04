@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Pencil, Check, X, Mail, Globe, MapPin,
-    Pin, Send, Building2, User, Activity, MoreHorizontal, Search, UserPlus, Tag, Plus, Trash2
+    Pin, Send, Building2, User, Activity, MoreHorizontal, Search, UserPlus, Tag, Plus, Trash2, Phone
 } from 'lucide-react';
 import { useStore } from '../store.js';
 
@@ -131,6 +131,7 @@ function EditableField({ label, value, onSave, multiline = false }) {
 // ── Main Detail Page ──
 export function ContactDetail() {
     const { id } = useParams();
+    useEffect(() => { window.scrollTo(0, 0); }, [id]);
     const navigate = useNavigate();
     const contacts = useStore((s) => s.contacts);
     const updateContact = useStore((s) => s.updateContact);
@@ -257,17 +258,17 @@ export function ContactDetail() {
     return (
         <div className="space-y-6 max-w-6xl mx-auto pb-12 animate-fade-in">
             {/* ── Floating Action Bar (Top) ── */}
-            <div className="sticky top-6 z-50 flex items-center justify-between bg-slate-dark/80 backdrop-blur-md rounded-pill p-2 shadow-heavy border border-white/10">
+            <div className="sticky top-16 sm:top-20 z-30 flex items-center justify-between gap-2 bg-slate-dark/90 backdrop-blur-md rounded-pill p-1.5 sm:p-2 shadow-heavy border border-white/10">
                 <button
                     onClick={() => navigate('/')}
-                    className="flex items-center gap-2 pl-4 pr-5 py-2.5 rounded-full text-base font-medium text-gray-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
+                    className="flex items-center gap-2 pl-3 pr-3 sm:pl-4 sm:pr-5 py-2.5 rounded-full text-base font-medium shrink-0 text-gray-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
                 >
                     <ArrowLeft className="w-5 h-5" />
-                    Dashboard
+                    <span className="hidden sm:inline">Dashboard</span>
                 </button>
 
                 {/* Top Status Indicator */}
-                <div className="pr-4 flex items-center gap-3">
+                <div className="pr-1 sm:pr-4 flex items-center gap-2 sm:gap-3 min-w-0">
                     {canDelete() && (
                         <button
                             onClick={handleDeleteContact}
@@ -290,7 +291,7 @@ export function ContactDetail() {
                                 <button
                                     key={s.key}
                                     onClick={() => setStatus(officeContacts.map((c) => c.id), s.key)}
-                                    className={`w-10 h-10 sm:w-auto sm:px-5 rounded-full sm:rounded-pill text-sm font-bold transition-all cursor-pointer flex items-center justify-center ${isActive ? s.activeClass : s.inactiveClass
+                                    className={`min-w-9 h-9 px-2.5 sm:h-10 sm:px-5 rounded-full sm:rounded-pill text-sm font-bold transition-all cursor-pointer flex items-center justify-center ${isActive ? s.activeClass : s.inactiveClass
                                         }`}
                                 >
                                     {s.label}
@@ -302,7 +303,7 @@ export function ContactDetail() {
             </div>
 
             {/* ── Hero Profile ── */}
-            <div className="bg-slate-dark rounded-5xl p-8 lg:p-10 shadow-card border border-white/5 relative overflow-hidden flex flex-col items-start gap-8">
+            <div className="bg-slate-dark rounded-5xl p-5 sm:p-8 lg:p-10 shadow-card border border-white/5 relative overflow-hidden flex flex-col items-start gap-8">
                 <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
                     <Building2 className="w-64 h-64 text-white" />
                 </div>
@@ -332,15 +333,25 @@ export function ContactDetail() {
                         </div>
                     </div>
 
+                    <div className="flex flex-wrap items-center gap-3 self-start md:self-auto">
+                    {officeRecord?.phone1 && /\d{7,}/.test(officeRecord.phone1.replace(/\D/g, '')) && (
+                        <a
+                            href={`tel:${officeRecord.phone1.replace(/[^\d+]/g, '')}`}
+                            className="flex-shrink-0 bg-emerald/15 hover:bg-emerald/25 text-emerald px-6 py-3 rounded-pill text-sm font-bold flex items-center gap-2 transition-all border border-emerald/40"
+                        >
+                            <Phone className="w-4 h-4" /> Call {officeRecord.phone1}
+                        </a>
+                    )}
                     {/* Add Contact Button */}
                     <button
                         onClick={handleCreateContact}
                         disabled={isCreatingPerson}
-                        className="flex-shrink-0 self-start md:self-auto bg-white/5 hover:bg-olive text-white hover:text-obsidian px-6 py-3 rounded-pill text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm border border-white/10 border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
+                        className="flex-shrink-0 bg-white/5 hover:bg-olive text-white hover:text-obsidian px-6 py-3 rounded-pill text-sm font-bold flex items-center gap-2 transition-all cursor-pointer shadow-sm border border-white/10 border-transparent disabled:opacity-60 disabled:cursor-not-allowed"
                     >
                         <UserPlus className="w-4 h-4" />
                         {isCreatingPerson ? 'Saving...' : 'Add Person to Office'}
                     </button>
+                    </div>
                 </div>
             </div>
 
