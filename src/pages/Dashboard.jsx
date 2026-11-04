@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, useSyncExternalStore } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, ChevronLeft, ChevronRight, MapPin, X, Download, Plus, Phone, AlertTriangle } from 'lucide-react';
 import { useStore, findPossibleDuplicates } from '../store.js';
+import { MobileContactList } from '../components/MobileContactList.jsx';
 
 function StatusBadge({ contact }) {
     const getActiveStyles = () => {
@@ -22,7 +23,17 @@ function StatusBadge({ contact }) {
     return <span className="flex items-center justify-center w-8 h-8 rounded-full text-[15px] bg-slate-dark text-gray-500 font-bold border border-white/10 shadow-none" title="None">—</span>;
 }
 
+const PHONE_QUERY = '(max-width: 767px)';
+function useIsPhone() {
+    return useSyncExternalStore(
+        (cb) => { const m = window.matchMedia(PHONE_QUERY); m.addEventListener('change', cb); return () => m.removeEventListener('change', cb); },
+        () => window.matchMedia(PHONE_QUERY).matches,
+        () => false,
+    );
+}
+
 export function Dashboard() {
+    const isPhone = useIsPhone();
     const contacts = useStore((s) => s.contacts);
     const searchQuery = useStore((s) => s.searchQuery);
     const setSearch = useStore((s) => s.setSearch);
@@ -145,8 +156,31 @@ export function Dashboard() {
     };
 
     return (
-        <div className="space-y-6 animate-fade-in">
+        <div className="animate-fade-in">
+            {/* ── Phone: contacts-app style list ── */}
+            {isPhone ? (
+            <div className="md:hidden">
+                <MobileContactList
+                    contacts={filtered}
+                    totalCount={contacts.length}
+                    stats={stats}
+                    searchQuery={searchQuery}
+                    setSearch={setSearch}
+                    statusFilter={statusFilter}
+                    setStatusFilter={setStatusFilter}
+                    cityFilter={cityFilter}
+                    setCityFilter={setCityFilter}
+                    specialtyFilter={specialtyFilter}
+                    setSpecialtyFilter={setSpecialtyFilter}
+                    onClear={clearFilters}
+                    onNew={() => setShowNewModal(true)}
+                    onOpen={(id) => navigate(`/contact/${id}`)}
+                />
+            </div>
 
+            ) : (
+            /* ── Desktop / tablet ── */
+            <div className="hidden md:block space-y-6">
             {/* ── Page Header & Filters ── */}
             <div className="flex flex-col md:flex-row items-start md:items-center gap-4 bg-slate-dark/50 backdrop-blur-md rounded-3xl p-3 border border-white/5 shadow-card">
                 {/* Logo */}
@@ -154,7 +188,7 @@ export function Dashboard() {
                     <img
                         src="/SLF_Black_Book_Logo.png"
                         alt="SLF Rolodex"
-                        className="w-[160px] md:w-[250px] object-contain"
+                        className="w-[250px] object-contain"
                     />
                 </div>
 
@@ -168,7 +202,7 @@ export function Dashboard() {
                             <input
                                 type="text"
                                 ref={searchRef}
-                                placeholder={typeof window !== 'undefined' && window.matchMedia('(pointer: fine)').matches ? 'Search name, city, phone, specialty...   ( / )' : 'Search name, city, phone, specialty...'}
+                                placeholder="Search name, city, phone, specialty...   ( / )"
                                 value={searchQuery}
                                 onChange={(e) => setSearch(e.target.value)}
                                 onKeyDown={(e) => {
@@ -289,7 +323,7 @@ export function Dashboard() {
             {/* ── Contact List ── */}
             <div className="bg-slate-dark rounded-4xl shadow-card border border-white/5 overflow-hidden">
                 {/* Table header */}
-                <div className="hidden md:grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 bg-white/5 border-b border-white/5 text-[13px] font-bold text-gray-400 uppercase tracking-widest">
+                <div className="grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-4 bg-white/5 border-b border-white/5 text-[13px] font-bold text-gray-400 uppercase tracking-widest">
                     <span>Business Name</span>
                     <span>Contact</span>
                     <span>City</span>
@@ -313,45 +347,8 @@ export function Dashboard() {
                             onKeyDown={(e) => { if (e.key === 'Enter') open(); }}
                             className="cursor-pointer group hover:bg-white/5 active:bg-white/5 transition-colors"
                         >
-                            {/* Mobile card */}
-                            <div className="md:hidden px-4 py-4">
-                                <div className="flex items-start gap-3">
-                                    <div className="min-w-0 flex-1">
-                                        <p className="text-[16px] font-semibold text-white leading-snug line-clamp-2 break-words">
-                                            {contact.officeName || <span className="text-gray-500 italic">Unnamed</span>}
-                                        </p>
-                                        <p className="mt-0.5 text-[14px] text-gray-400 truncate">
-                                            {[contact.contactName, contact.city].filter(Boolean).join(' · ') || '—'}
-                                        </p>
-                                    </div>
-                                    <div className="shrink-0 pt-0.5"><StatusBadge contact={contact} /></div>
-                                </div>
-                                {(contact.specialties?.length > 0 || contact.phone1) && (
-                                    <div className="mt-3 flex items-center gap-2">
-                                        <div className="flex flex-wrap gap-1.5 min-w-0 flex-1">
-                                            {(contact.specialties || []).slice(0, 3).map(s => (
-                                                <span key={s} className="px-2 py-0.5 rounded bg-white/5 border border-white/10 text-[12px] text-gray-300 truncate max-w-[140px]">{s}</span>
-                                            ))}
-                                            {contact.specialties?.length > 3 && (
-                                                <span className="px-2 py-0.5 text-[12px] text-gray-500">+{contact.specialties.length - 3}</span>
-                                            )}
-                                        </div>
-                                        {tel && (
-                                            <a
-                                                href={tel}
-                                                onClick={(e) => e.stopPropagation()}
-                                                className="shrink-0 inline-flex items-center gap-1.5 h-10 px-3.5 rounded-pill bg-emerald/10 border border-emerald/30 text-emerald text-[14px] font-semibold"
-                                                aria-label={`Call ${contact.officeName || contact.contactName || ''}`}
-                                            >
-                                                <Phone className="w-4 h-4" />{contact.phone1}
-                                            </a>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
                             {/* Desktop row */}
-                            <div className="hidden md:grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-5 text-left items-center">
+                            <div className="grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-5 text-left items-center">
                                 <span className="text-base font-medium text-white truncate group-hover:text-emerald transition-colors">
                                     {contact.officeName || <span className="text-gray-500 italic">Unnamed</span>}
                                 </span>
@@ -450,6 +447,8 @@ export function Dashboard() {
                     </div>
                 )}
             </div>
+            </div>
+            )}
             {/* ── New Contact Modal ── */}
             {showNewModal && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center">

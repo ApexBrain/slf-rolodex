@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, createContext, useContext } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
     ArrowLeft, Pencil, Check, X, Mail, Globe, MapPin,
-    Pin, Send, Building2, User, Activity, MoreHorizontal, Search, UserPlus, Tag, Plus, Trash2, Phone
+    Pin, Send, Building2, User, Activity, MoreHorizontal, Search, UserPlus, Tag, Plus, Trash2, Phone, ChevronLeft, MessageSquare, Navigation
 } from 'lucide-react';
+import { initialsFor, tierOf, TIER_AVATAR } from '../components/MobileContactList.jsx';
 import { useStore } from '../store.js';
 
 // ── Helpers ──
@@ -21,6 +22,45 @@ function getFaviconUrl(url) {
     } catch (e) {
         return null;
     }
+}
+
+// On phones, fields are read-only until the user taps Edit (no hover on touch screens).
+const MobileEditContext = createContext(false);
+
+const digits = (v) => (v || '').replace(/[^\d+]/g, '');
+const isDialable = (v) => /\d{7,}/.test((v || '').replace(/\D/g, ''));
+const webHref = (v) => (!v ? null : /^https?:\/\//i.test(v.trim()) ? v.trim() : `https://${v.trim()}`);
+const mapsHref = (q) => (q ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}` : null);
+
+function ActionButton({ href, icon: Icon, label, external }) {
+    const inner = (
+        <>
+            <span className="w-12 h-12 rounded-full bg-white/[0.08] flex items-center justify-center">
+                <Icon className="w-5 h-5" />
+            </span>
+            <span className="mt-1.5 text-[11px] font-medium">{label}</span>
+        </>
+    );
+    if (!href) return <span className="flex flex-col items-center text-gray-600 opacity-60" aria-disabled="true">{inner}</span>;
+    return (
+        <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="flex flex-col items-center text-emerald active:opacity-60">
+            {inner}
+        </a>
+    );
+}
+
+function InfoRow({ label, value, href, external }) {
+    if (!value) return null;
+    return (
+        <div className="px-4 py-2.5 border-b border-white/[0.06] last:border-0">
+            <p className="text-[13px] text-gray-500">{label}</p>
+            {href ? (
+                <a href={href} {...(external ? { target: '_blank', rel: 'noreferrer' } : {})} className="block text-[16px] text-emerald break-words active:opacity-60">{value}</a>
+            ) : (
+                <p className="text-[16px] text-white break-words whitespace-pre-wrap">{value}</p>
+            )}
+        </div>
+    );
 }
 
 // ── Editable Field with pencil icon ──
@@ -55,9 +95,10 @@ function EditableField({ label, value, onSave, multiline = false }) {
         }
     };
     const cancel = () => { setDraft(value || ''); setEditing(false); };
+    const mobileEdit = useContext(MobileEditContext);
 
     return (
-        <div className="group border-b border-white/5 py-3 last:border-0 relative">
+        <div className={`group border-b border-white/5 py-3 last:border-0 relative ${!value && !mobileEdit && !editing ? 'hidden md:block' : ''}`}>
             <label className="text-xs font-bold text-gray-500 uppercase tracking-widest block mb-1">{label}</label>
             {editing ? (
                 <div className="flex items-start gap-2 mt-2">
@@ -117,7 +158,7 @@ function EditableField({ label, value, onSave, multiline = false }) {
                     )}
                     <button
                         onClick={() => setEditing(true)}
-                        className="absolute right-0 top-1/2 -translate-y-1/2 p-2 rounded-full opacity-0 group-hover:opacity-100 hover:bg-white/5 transition-all cursor-pointer"
+                        className={`absolute right-0 top-1/2 -translate-y-1/2 p-2 rounded-full hover:bg-white/5 transition-all cursor-pointer ${mobileEdit ? 'opacity-100' : 'hidden md:block md:opacity-0 md:group-hover:opacity-100'}`}
                         title="Edit"
                     >
                         <Pencil className="w-3.5 h-3.5 text-neon-yellow" />
@@ -158,6 +199,8 @@ export function ContactDetail() {
     const [isCreatingPerson, setIsCreatingPerson] = useState(false);
     const [newPersonData, setNewPersonData] = useState({ name: '', email: '', phone1: '' });
     const pinnedRef = useRef(null);
+    const [mobileEdit, setMobileEdit] = useState(false);
+    useEffect(() => { setMobileEdit(false); }, [id]);
 
     const relatedContacts = useMemo(() => {
         if (!contact || !contact.officeName) return [];
@@ -254,11 +297,60 @@ export function ContactDetail() {
 
     const currentStatus = officeRecord?.a ? 'a' : officeRecord?.b ? 'b' : officeRecord?.c ? 'c' : '';
     const faviconUrl = getFaviconUrl(officeRecord?.website);
+    const tier = tierOf(officeRecord);
+    const callNum = [contact.phone1, officeRecord?.phone1, officeRecord?.phone2].find(isDialable);
+    const emailAddr = contact.email || officeRecord?.email || '';
+    const cityLine = [officeRecord?.city, [officeRecord?.state, officeRecord?.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+    const fullAddress = officeRecord?.streetAddress || officeRecord?.city
+        ? [officeRecord?.streetAddress, cityLine].filter(Boolean).join(', ')
+        : '';
+    const heroSub = [contact.contactName, [officeRecord?.city, officeRecord?.state].filter(Boolean).join(', ')].filter(Boolean).join(' · ');
+    const goBack = () => (window.history.state?.idx > 0 ? navigate(-1) : navigate('/'));
 
     return (
-        <div className="space-y-6 max-w-6xl mx-auto pb-12 animate-fade-in">
+        <MobileEditContext.Provider value={mobileEdit}>
+        <div className="space-y-4 md:space-y-6 max-w-6xl mx-auto pb-12 animate-fade-in">
+            {/* ── Phone: top bar ── */}
+            <div className="md:hidden sticky top-14 z-30 -mx-3 -mt-4 px-1 h-11 flex items-center justify-between bg-obsidian/95 backdrop-blur-md border-b border-white/5">
+                <button onClick={goBack} className="flex items-center h-10 pr-3 text-[16px] text-emerald active:opacity-60">
+                    <ChevronLeft className="w-6 h-6" strokeWidth={2.25} /> Contacts
+                </button>
+                <button onClick={() => setMobileEdit((v) => !v)} className="h-10 px-3 text-[16px] font-semibold text-emerald active:opacity-60">
+                    {mobileEdit ? 'Done' : 'Edit'}
+                </button>
+            </div>
+
+            {/* ── Phone: contact card header ── */}
+            <div className="md:hidden flex flex-col items-center text-center pt-2">
+                <span className={`w-24 h-24 rounded-full flex items-center justify-center text-[34px] font-bold ${TIER_AVATAR[tier]}`}>
+                    {initialsFor(officeRecord)}
+                </span>
+                <h1 className="mt-3 px-4 text-[26px] font-bold leading-tight text-white tracking-tight break-words">
+                    {officeRecord?.officeName || 'Unnamed Office'}
+                </h1>
+                {heroSub && <p className="mt-1 px-4 text-[15px] text-gray-400">{heroSub}</p>}
+                <div className="mt-3 inline-flex bg-white/[0.06] rounded-full p-1 gap-1" role="group" aria-label="Tier">
+                    {[['a', 'A'], ['b', 'B'], ['c', 'C'], ['', 'None']].map(([k, l]) => (
+                        <button
+                            key={l}
+                            onClick={() => setStatus(officeContacts.map((c) => c.id), k)}
+                            className={`h-8 min-w-[44px] px-3 rounded-full text-[13px] font-bold transition-colors ${currentStatus === k ? 'bg-white text-obsidian' : 'text-gray-400'}`}
+                        >
+                            {l}
+                        </button>
+                    ))}
+                </div>
+                <div className="mt-5 w-full grid grid-cols-5 gap-1 px-1">
+                    <ActionButton href={callNum ? `tel:${digits(callNum)}` : null} icon={Phone} label="call" />
+                    <ActionButton href={callNum ? `sms:${digits(callNum)}` : null} icon={MessageSquare} label="text" />
+                    <ActionButton href={emailAddr ? `mailto:${emailAddr}` : null} icon={Mail} label="email" />
+                    <ActionButton href={mapsHref(fullAddress)} icon={Navigation} label="directions" external />
+                    <ActionButton href={webHref(officeRecord?.website)} icon={Globe} label="website" external />
+                </div>
+            </div>
+
             {/* ── Floating Action Bar (Top) ── */}
-            <div className="sticky top-16 sm:top-20 z-30 flex items-center justify-between gap-2 bg-slate-dark/90 backdrop-blur-md rounded-pill p-1.5 sm:p-2 shadow-heavy border border-white/10">
+            <div className="hidden md:flex sticky top-20 z-30 items-center justify-between gap-2 bg-slate-dark/90 backdrop-blur-md rounded-pill p-1.5 sm:p-2 shadow-heavy border border-white/10">
                 <button
                     onClick={() => navigate('/')}
                     className="flex items-center gap-2 pl-3 pr-3 sm:pl-4 sm:pr-5 py-2.5 rounded-full text-base font-medium shrink-0 text-gray-300 hover:text-white hover:bg-white/5 transition-colors cursor-pointer"
@@ -303,7 +395,7 @@ export function ContactDetail() {
             </div>
 
             {/* ── Hero Profile ── */}
-            <div className="bg-slate-dark rounded-5xl p-5 sm:p-8 lg:p-10 shadow-card border border-white/5 relative overflow-hidden flex flex-col items-start gap-8">
+            <div className="hidden md:flex bg-slate-dark rounded-5xl p-5 sm:p-8 lg:p-10 shadow-card border border-white/5 relative overflow-hidden flex-col items-start gap-8">
                 <div className="absolute top-0 right-0 p-8 opacity-5 pointer-events-none">
                     <Building2 className="w-64 h-64 text-white" />
                 </div>
@@ -356,17 +448,31 @@ export function ContactDetail() {
             </div>
 
             {/* ── Grid ── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 md:gap-6">
+
+                {/* ── Phone: info card ── */}
+                <div className={`md:hidden order-1 bg-slate-dark rounded-2xl border border-white/5 overflow-hidden ${mobileEdit ? 'hidden' : ''}`}>
+                    <InfoRow label="phone" value={officeRecord?.phone1} href={isDialable(officeRecord?.phone1) ? `tel:${digits(officeRecord.phone1)}` : null} />
+                    <InfoRow label="phone 2" value={officeRecord?.phone2} href={isDialable(officeRecord?.phone2) ? `tel:${digits(officeRecord.phone2)}` : null} />
+                    <InfoRow label="email" value={officeRecord?.email} href={officeRecord?.email ? `mailto:${officeRecord.email}` : null} />
+                    <InfoRow label="address" value={fullAddress} href={mapsHref(fullAddress)} external />
+                    <InfoRow label="website" value={officeRecord?.website} href={webHref(officeRecord?.website)} external />
+                    <InfoRow label="mailing" value={officeRecord?.mailing} />
+                    <InfoRow label="who" value={officeRecord?.who} />
+                    {!officeRecord?.phone1 && !officeRecord?.phone2 && !officeRecord?.email && !fullAddress && !officeRecord?.website && (
+                        <p className="px-4 py-3 text-[15px] text-gray-500">No details yet. Tap Edit to add them.</p>
+                    )}
+                </div>
 
                 {/* ── Left Column ── */}
-                <div className="lg:col-span-2 space-y-6">
+                <div className="contents lg:block lg:col-span-2 lg:space-y-6">
                     {/* Company Info */}
-                    <div className="bg-slate-dark rounded-4xl p-8 shadow-card border border-white/5">
+                    <div className={`order-2 lg:order-none bg-slate-dark rounded-4xl p-5 sm:p-8 shadow-card border border-white/5 ${mobileEdit ? '' : 'hidden md:block'}`}>
                         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/5">
                             <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
                                 <Building2 className="w-4 h-4 text-emerald" />
                             </div>
-                            <h3 className="text-lg font-bold text-white uppercase tracking-widest">Company Details</h3>
+                            <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Company Details</h3>
                         </div>
                         <div className="grid grid-cols-1 gap-1">
                             <EditableField label="Office Name" value={officeRecord?.officeName} onSave={(v) => updateOfficeFields({ officeName: v })} />
@@ -385,7 +491,7 @@ export function ContactDetail() {
                     </div>
 
                     {/* Critical Note */}
-                    <div className="bg-danger/10 border border-danger/20 rounded-4xl p-6 shadow-inner relative group">
+                    <div className={`order-4 lg:order-none bg-danger/10 border border-danger/20 rounded-4xl p-5 sm:p-6 shadow-inner relative group ${!officeRecord?.pinnedNote && !mobileEdit ? 'hidden md:block' : ''}`}>
                         <div className="flex items-center gap-3 mb-4 pb-3 border-b border-danger/20">
                             <div className="w-8 h-8 rounded-full bg-danger/20 flex items-center justify-center border border-danger/30">
                                 <Pin className="w-3.5 h-3.5 text-danger" />
@@ -424,7 +530,7 @@ export function ContactDetail() {
                                             setPinnedDraft(officeRecord?.pinnedNote || '');
                                             setEditingPinned(true);
                                         }}
-                                        className="absolute right-0 top-0 p-2 rounded-full opacity-0 group-hover/note:opacity-100 hover:bg-danger/20 transition-all cursor-pointer"
+                                        className="absolute right-0 top-0 p-2 rounded-full md:opacity-0 md:group-hover/note:opacity-100 hover:bg-danger/20 transition-all cursor-pointer"
                                         title="Edit Critical Note"
                                     >
                                         <Pencil className="w-3.5 h-3.5 text-danger" />
@@ -435,13 +541,13 @@ export function ContactDetail() {
                     </div>
 
                     {/* Comments section */}
-                    <div className="bg-slate-dark rounded-4xl shadow-card border border-white/5 flex flex-col h-[600px]">
+                    <div className="order-6 lg:order-none bg-slate-dark rounded-4xl shadow-card border border-white/5 flex flex-col max-h-[520px] md:max-h-none md:h-[600px]">
                         <div className="p-6 border-b border-white/5">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
                                     <Activity className="w-4 h-4 text-emerald" />
                                 </div>
-                                <h3 className="text-lg font-bold text-white uppercase tracking-widest">Comments</h3>
+                                <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Comments</h3>
                                 <span className="ml-auto bg-obsidian text-emerald text-xs font-bold px-3 py-1.5 rounded-full border border-white/5 shadow-inner">
                                     {officeRecord?.notes?.length || 0}
                                 </span>
@@ -459,7 +565,7 @@ export function ContactDetail() {
                                 className="w-full bg-obsidian border border-white/10 rounded-2xl px-4 py-3 text-base text-white placeholder:text-gray-600 resize-none outline-none focus:border-olive transition-colors scrollbar-hide shadow-inner"
                             />
                             <div className="flex items-center justify-between">
-                                <span className="text-xs font-mono text-gray-600">⌘+Enter to save</span>
+                                <span className="hidden md:inline text-xs font-mono text-gray-600">⌘+Enter to save</span>
                                 <button
                                     onClick={handleSubmitComment}
                                     disabled={!commentText.trim()}
@@ -494,17 +600,17 @@ export function ContactDetail() {
                 </div>
 
                 {/* ── Right Column ── */}
-                <div className="space-y-6">
+                <div className="contents lg:block lg:space-y-6">
 
                     {/* Contacts */}
-                    <div className="bg-slate-dark rounded-4xl p-8 shadow-card border border-white/5 relative overflow-hidden group">
+                    <div className="order-3 lg:order-none bg-slate-dark rounded-4xl p-5 sm:p-8 shadow-card border border-white/5 relative overflow-hidden group">
                         <div className="absolute top-0 right-0 w-32 h-32 bg-olive/5 rounded-bl-full pointer-events-none opacity-50 group-hover:opacity-100 transition-opacity"></div>
                         <div className="flex items-center justify-between mb-6 pb-4 border-b border-white/5 relative z-10">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
                                     <User className="w-4 h-4 text-emerald" />
                                 </div>
-                                <h3 className="text-lg font-bold text-white uppercase tracking-widest">Contacts</h3>
+                                <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Contacts</h3>
                             </div>
                         </div>
 
@@ -573,12 +679,12 @@ export function ContactDetail() {
                     </div>
 
                     {/* Specialties */}
-                    <div className="bg-slate-dark rounded-4xl p-8 shadow-card border border-white/5">
+                    <div className="order-5 lg:order-none bg-slate-dark rounded-4xl p-5 sm:p-8 shadow-card border border-white/5">
                         <div className="flex items-center gap-3 mb-6 pb-4 border-b border-white/5">
                             <div className="w-10 h-10 rounded-full bg-obsidian flex items-center justify-center border border-white/10">
                                 <Tag className="w-4 h-4 text-emerald" />
                             </div>
-                            <h3 className="text-lg font-bold text-white uppercase tracking-widest">Specialties</h3>
+                            <h3 className="text-[15px] md:text-lg font-bold text-white uppercase tracking-widest">Specialties</h3>
                         </div>
 
                         <div className="flex flex-wrap gap-2 mb-6">
@@ -632,7 +738,18 @@ export function ContactDetail() {
                         </div>
                     </div>
                 </div>
+
+                {/* ── Phone: delete (Edit mode only, admins) ── */}
+                {mobileEdit && canDelete() && (
+                    <button
+                        onClick={handleDeleteContact}
+                        className="md:hidden order-7 w-full h-12 rounded-2xl bg-slate-dark border border-white/5 text-[16px] font-semibold text-danger active:bg-white/5"
+                    >
+                        Delete Contact
+                    </button>
+                )}
             </div>
         </div>
+        </MobileEditContext.Provider>
     );
 }

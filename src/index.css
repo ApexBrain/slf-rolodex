@@ -42,3 +42,7 @@ body {
   /* lime */
   outline-offset: 2px;
 }
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
+}
