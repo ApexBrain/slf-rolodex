@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useStore } from '../store.js';
+import { GetTheApp } from '../components/GetTheApp.jsx';
 
 export function Login() {
     const signIn = useStore((s) => s.signIn);
@@ -26,8 +27,9 @@ export function Login() {
     };
 
     return (
-        <div className="min-h-screen bg-obsidian text-white flex items-center justify-center px-4">
+        <div className="min-h-screen bg-obsidian text-white flex flex-col items-center justify-center px-4 py-10 gap-4">
             <div className="w-full max-w-md bg-slate-dark border border-white/10 rounded-3xl p-7 shadow-card">
+                <img src="/icons/icon-192.png" alt="" className="w-14 h-14 rounded-2xl mb-4 shadow-card" />
                 <h1 className="text-2xl font-bold mb-2">SLF Rolodex</h1>
                 <p className="text-sm text-gray-400 mb-6">Sign in to continue</p>
 
@@ -70,6 +72,9 @@ export function Login() {
                 <p className="mt-4 text-sm text-gray-400">
                     Accounts are created by an admin in User Management.
                 </p>
+            </div>
+            <div className="w-full max-w-md">
+                <GetTheApp />
             </div>
         </div>
     );
