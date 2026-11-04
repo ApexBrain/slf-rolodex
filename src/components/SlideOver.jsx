@@ -291,7 +291,7 @@ function ActivityTab({ contact }) {
                                             {cat.label}
                                         </span>
                                         <span className="text-[10px] text-zinc-dim">
-                                            {relativeTime(note.timestamp)}
+                                            {note.author ? `${note.author.split('@')[0]} · ` : ''}{relativeTime(note.timestamp)}
                                         </span>
                                     </div>
                                     <p className="text-sm text-zinc-text leading-relaxed whitespace-pre-wrap">

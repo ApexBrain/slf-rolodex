@@ -5,6 +5,7 @@ import { ContactDetail } from './pages/ContactDetail.jsx';
 import { Login } from './pages/Login.jsx';
 import { UserManagement } from './pages/UserManagement.jsx';
 import { useStore } from './store.js';
+import { Toast } from './components/Toast.jsx';
 
 export default function App() {
     const initializeAuth = useStore((s) => s.initializeAuth);
@@ -193,6 +194,7 @@ export default function App() {
                     <Route path="*" element={<Navigate to="/" replace />} />
                 </Routes>
             </main>
+            <Toast />
         </div>
     );
 }

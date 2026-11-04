@@ -24,3 +24,10 @@ dist-ssr
 *.sw?
 .vercel
 .env*.local
+
+# Provider PII - never commit
+.private/
+Master_Providers*.xlsx
+src/data.js
+.env*
+!.env.example

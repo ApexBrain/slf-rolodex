@@ -1,7 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, ChevronLeft, ChevronRight, MapPin, X, Download, Plus } from 'lucide-react';
-import { useStore } from '../store.js';
+import { Search, ChevronLeft, ChevronRight, MapPin, X, Download, Plus, Phone, AlertTriangle } from 'lucide-react';
+import { useStore, findPossibleDuplicates } from '../store.js';
 
 function StatusBadge({ contact }) {
     const getActiveStyles = () => {
@@ -42,6 +42,19 @@ export function Dashboard() {
     const addContact = useStore((s) => s.addContact);
     const navigate = useNavigate();
 
+    const searchRef = useRef(null);
+    useEffect(() => {
+        const onKey = (e) => {
+            const tag = (e.target.tagName || '').toLowerCase();
+            if (e.key === '/' && tag !== 'input' && tag !== 'textarea' && tag !== 'select') {
+                e.preventDefault();
+                searchRef.current?.focus();
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
     const [page, setPage] = useState(0);
     const PAGE_SIZE = 150;
 
@@ -63,6 +76,11 @@ export function Dashboard() {
             setIsCreating(false);
         }
     };
+
+    const possibleDuplicates = useMemo(
+        () => (showNewModal ? findPossibleDuplicates(contacts, newContact) : []),
+        [showNewModal, contacts, newContact.officeName, newContact.city, newContact.email, newContact.phone1]
+    );
 
     const stats = useMemo(() => getStats(), [contacts]);
     const filtered = useMemo(() => getFilteredContacts(), [contacts, activeSearchQuery, cityFilter, statusFilter, specialtyFilter]);
@@ -149,7 +167,8 @@ export function Dashboard() {
                             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                             <input
                                 type="text"
-                                placeholder="Search..."
+                                ref={searchRef}
+                                placeholder="Search name, city, phone, specialty...   ( / )"
                                 value={searchQuery}
                                 onChange={(e) => setSearch(e.target.value)}
                                 onKeyDown={(e) => {
@@ -261,6 +280,12 @@ export function Dashboard() {
                 </div>
             </div>
 
+            <p className="px-2 -mb-2 text-[13px] text-gray-500">
+                {filtered.length === contacts.length
+                    ? `${contacts.length.toLocaleString()} contacts`
+                    : `${filtered.length.toLocaleString()} of ${contacts.length.toLocaleString()} contacts`}
+            </p>
+
             {/* ── Contact List ── */}
             <div className="bg-slate-dark rounded-4xl shadow-card border border-white/5 overflow-hidden">
                 {/* Table header */}
@@ -276,9 +301,12 @@ export function Dashboard() {
                 {/* Rows */}
                 <div className="divide-y divide-white/5">
                     {pageData.map((contact) => (
-                        <button
+                        <div
                             key={contact.id}
+                            role="link"
+                            tabIndex={0}
                             onClick={() => navigate(`/contact/${contact.id}`)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') navigate(`/contact/${contact.id}`); }}
                             className="w-full grid grid-cols-[1.5fr_1fr_1fr_1.5fr_1fr_80px] gap-4 px-6 py-5 text-left hover:bg-white/5 transition-colors cursor-pointer group items-center"
                         >
                             <span className="text-base font-medium text-white truncate group-hover:text-emerald transition-colors">
@@ -299,11 +327,22 @@ export function Dashboard() {
                                     <span className="text-[15px] text-gray-600">—</span>
                                 )}
                             </div>
-                            <span className="text-[15px] text-gray-500 font-medium truncate">{contact.phone1 || '—'}</span>
+                            {contact.phone1 && /\d{7,}/.test(contact.phone1.replace(/\D/g, '')) ? (
+                                <a
+                                    href={`tel:${contact.phone1.replace(/[^\d+]/g, '')}`}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="inline-flex items-center gap-1.5 text-[15px] text-gray-400 font-medium truncate hover:text-emerald transition-colors"
+                                    title="Call"
+                                >
+                                    <Phone className="w-3.5 h-3.5 shrink-0" />{contact.phone1}
+                                </a>
+                            ) : (
+                                <span className="text-[15px] text-gray-500 font-medium truncate">{contact.phone1 || '—'}</span>
+                            )}
                             <div className="flex justify-center items-center">
                                 <StatusBadge contact={contact} />
                             </div>
-                        </button>
+                        </div>
                     ))}
 
                     {pageData.length === 0 && (
@@ -409,6 +448,27 @@ export function Dashboard() {
                                 </div>
                             ))}
                         </div>
+
+                        {possibleDuplicates.length > 0 && (
+                            <div className="mt-4 rounded-2xl border border-amber-500/40 bg-amber-500/10 p-3">
+                                <p className="flex items-center gap-2 text-[13px] font-semibold text-amber-300">
+                                    <AlertTriangle className="w-4 h-4" /> This may already exist
+                                </p>
+                                <ul className="mt-2 space-y-1">
+                                    {possibleDuplicates.map((c) => (
+                                        <li key={c.id}>
+                                            <button
+                                                type="button"
+                                                onClick={() => navigate(`/contact/${c.id}`)}
+                                                className="text-[13px] text-amber-100 hover:underline text-left cursor-pointer"
+                                            >
+                                                {c.officeName || 'Unnamed'}{c.contactName ? ` · ${c.contactName}` : ''}{c.city ? ` · ${c.city}` : ''}
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
 
                         <div className="flex items-center justify-end gap-3 mt-6">
                             <button
