@@ -331,18 +331,31 @@ export function ContactDetail({ embedded = false }) {
                         {officeRecord?.officeName || 'Unnamed Office'}
                     </h1>
                     {heroSub && <p className="mt-1 px-4 text-[15px] text-gray-400">{heroSub}</p>}
-                    <div className="mt-3 inline-flex bg-white/[0.06] rounded-full p-1 gap-1" role="group" aria-label="Tier">
-                        {[['a', 'A'], ['b', 'B'], ['c', 'C'], ['', 'None']].map(([k, l]) => (
-                            <button
-                                key={l}
-                                onClick={() => setStatus(officeIds, k)}
-                                aria-pressed={currentStatus === k}
-                                className={`h-8 min-w-[44px] px-3 rounded-full text-[13px] font-bold transition-colors cursor-pointer ${currentStatus === k ? 'bg-white text-obsidian' : 'text-gray-400 hover:text-white'}`}
-                            >
-                                {l}
-                            </button>
-                        ))}
-                    </div>
+                    {editMode ? (
+                        /* Tier can only be changed in Edit mode (it was too easy to tap by accident). */
+                        <div className="mt-3 flex flex-col items-center gap-1.5">
+                            <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-500">Tier</span>
+                            <div className="inline-flex bg-white/[0.06] rounded-full p-1 gap-1 ring-1 ring-neon-yellow/30" role="group" aria-label="Change tier">
+                                {[['a', 'A'], ['b', 'B'], ['c', 'C'], ['', 'None']].map(([k, l]) => (
+                                    <button
+                                        key={l}
+                                        onClick={() => setStatus(officeIds, k)}
+                                        aria-pressed={currentStatus === k}
+                                        className={`h-8 min-w-[44px] px-3 rounded-full text-[13px] font-bold transition-colors cursor-pointer ${currentStatus === k ? 'bg-white text-obsidian' : 'text-gray-400 hover:text-white'}`}
+                                    >
+                                        {l}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="mt-3 inline-flex items-center gap-2 h-8 pl-3.5 pr-1 rounded-full bg-white/[0.06]" aria-label={`Tier ${tier || 'none'}`}>
+                            <span className="text-[12px] font-semibold uppercase tracking-wider text-gray-500">Tier</span>
+                            <span className={`h-6 min-w-[28px] px-2.5 rounded-full text-[13px] font-bold flex items-center justify-center ${tier ? TIER_AVATAR[tier] : 'text-gray-400'}`}>
+                                {tier || 'None'}
+                            </span>
+                        </div>
+                    )}
                     <div className="mt-5 w-full max-w-[480px] grid grid-cols-6 gap-0.5 px-0.5">
                         <ActionButton href={callNum ? `tel:${digits(callNum)}` : null} icon={Phone} label="call" />
                         <ActionButton href={callNum ? `sms:${digits(callNum)}` : null} icon={MessageSquare} label="text" />
